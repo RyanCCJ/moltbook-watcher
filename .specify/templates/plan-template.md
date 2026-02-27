@@ -31,7 +31,19 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+- [ ] `I. Spec-Driven Delivery`: Linked `spec.md`, `plan.md`, and `tasks.md`
+      exist and match current scope.
+- [ ] `II. Independently Valuable Increments`: User stories are prioritized and
+      each is independently testable and deliverable.
+- [ ] `III. Test-First Verification and Unit Coverage`: Story-level
+      verification approach is defined, tasks are ordered tests-first, and
+      changed business logic has explicit unit-test coverage.
+- [ ] `IV. Operability and Traceability`: Observability, error handling, and
+      rollout/rollback impact are documented.
+- [ ] `V. Minimal Surface, Compatibility, and Security`: Complexity is justified;
+      breaking changes, migration, and security impacts are explicitly captured.
+- [ ] Any unchecked gate is recorded in `Complexity Tracking` with owner and
+      rationale.
 
 ## Project Structure
 
