@@ -8,6 +8,7 @@ from src.api.app import create_app
 from src.models.base import Base, get_session
 from src.models.candidate_post import CandidatePost
 from src.models.review_item import ReviewItem
+from src.models.score_card import ScoreCard
 
 
 @pytest.mark.asyncio
@@ -43,12 +44,26 @@ async def test_review_list_and_decision_endpoints_follow_contract() -> None:
         review_item = ReviewItem(
             candidate_post_id=candidate.id,
             english_draft="Draft",
-            chinese_translation_full="草稿",
+            chinese_translation_full="Draft translation",
             risk_tags="[]",
             follow_up_rationale=None,
             decision="pending",
         )
         session.add(review_item)
+        session.add(
+            ScoreCard(
+                candidate_post_id=candidate.id,
+                novelty_score=4.3,
+                depth_score=4.1,
+                tension_score=3.2,
+                reflective_impact_score=4.0,
+                engagement_score=3.6,
+                risk_score=1,
+                content_score=3.84,
+                final_score=3.64,
+                score_version="contract-v1",
+            )
+        )
         await session.commit()
 
     transport = httpx.ASGITransport(app=app)
@@ -59,6 +74,8 @@ async def test_review_list_and_decision_endpoints_follow_contract() -> None:
         payload = list_response.json()
         assert "items" in payload
         assert payload["items"][0]["englishDraft"] == "Draft"
+        assert payload["items"][0]["aiScore"]["finalScore"] == 3.64
+        assert payload["items"][0]["aiScore"]["scoreVersion"] == "contract-v1"
 
         decision_response = await client.post(
             f"/review-items/{review_item.id}/decision",

@@ -17,8 +17,8 @@ from src.workers.publish_worker import PublishWorker
 
 
 class E2EMoltbookClient:
-    async def list_posts(self, window: str, cursor: str | None = None, limit: int = 100):
-        _ = (window, cursor, limit)
+    async def list_posts(self, window: str, cursor: str | None = None, limit: int = 100, sort: str = "top"):
+        _ = (window, cursor, limit, sort)
         return (
             [
                 MoltbookPost(

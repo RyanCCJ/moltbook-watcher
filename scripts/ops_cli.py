@@ -7,6 +7,10 @@ from typing import Any
 
 import httpx
 
+WINDOW_CHOICES = ["all_time", "year", "month", "week", "today", "past_hour"]
+SORT_CHOICES = ["hot", "new", "top", "rising"]
+DEFAULT_TIMEOUT_SECONDS = 180.0
+
 
 def _print_json(payload: Any) -> None:
     print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -42,7 +46,7 @@ def _cmd_ingest(client: httpx.Client, args: argparse.Namespace) -> int:
         client,
         "POST",
         "/ops/ingestion/run",
-        params={"window": args.window, "limit": args.limit},
+        params={"window": args.window, "sort": args.sort, "limit": args.limit},
     )
     _print_json(payload)
     return 0
@@ -92,7 +96,7 @@ def _cmd_smoke(client: httpx.Client, args: argparse.Namespace) -> int:
         client,
         "POST",
         "/ops/ingestion/run",
-        params={"window": args.window, "limit": args.limit},
+        params={"window": args.window, "sort": args.sort, "limit": args.limit},
     )
     print("# ingestion")
     _print_json(ingest)
@@ -135,21 +139,36 @@ def _cmd_smoke(client: httpx.Client, args: argparse.Namespace) -> int:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Moltbook Watcher operations CLI")
     parser.add_argument("--base-url", default="http://127.0.0.1:8000", help="API base URL")
-    parser.add_argument("--timeout", type=float, default=20, help="HTTP timeout seconds")
+    parser.add_argument(
+        "--timeout",
+        dest="global_timeout",
+        type=float,
+        default=DEFAULT_TIMEOUT_SECONDS,
+        help=f"HTTP timeout seconds (default: {int(DEFAULT_TIMEOUT_SECONDS)})",
+    )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     p = subparsers.add_parser("health", help="Check /health/live and /health")
+    p.add_argument("--timeout", type=float, default=None, help="Override HTTP timeout seconds for this command")
     p.set_defaults(func=_cmd_health)
 
     p = subparsers.add_parser("ingest", help="Run one ingestion cycle")
-    p.add_argument("--window", default="past_hour")
+    p.add_argument(
+        "--window",
+        default="past_hour",
+        choices=WINDOW_CHOICES,
+        help="Time window filter (applied locally after fetch)",
+    )
+    p.add_argument("--sort", default="top", choices=SORT_CHOICES)
     p.add_argument("--limit", type=int, default=1)
+    p.add_argument("--timeout", type=float, default=None, help="Override HTTP timeout seconds for this command")
     p.set_defaults(func=_cmd_ingest)
 
     p = subparsers.add_parser("review-list", help="List review items")
     p.add_argument("--status", default="pending")
     p.add_argument("--limit", type=int, default=10)
+    p.add_argument("--timeout", type=float, default=None, help="Override HTTP timeout seconds for this command")
     p.set_defaults(func=_cmd_review_list)
 
     p = subparsers.add_parser("review-decide", help="Submit review decision")
@@ -157,20 +176,30 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--decision", choices=["approved", "rejected", "archived"], required=True)
     p.add_argument("--reviewed-by", default="operator")
     p.add_argument("--comment", default=None)
+    p.add_argument("--timeout", type=float, default=None, help="Override HTTP timeout seconds for this command")
     p.set_defaults(func=_cmd_review_decide)
 
     p = subparsers.add_parser("publish-run", help="Run one publish cycle")
+    p.add_argument("--timeout", type=float, default=None, help="Override HTTP timeout seconds for this command")
     p.set_defaults(func=_cmd_publish_run)
 
     p = subparsers.add_parser("publish-jobs", help="List publish jobs")
     p.add_argument("--status", default=None)
+    p.add_argument("--timeout", type=float, default=None, help="Override HTTP timeout seconds for this command")
     p.set_defaults(func=_cmd_publish_jobs)
 
     p = subparsers.add_parser("smoke", help="US1->US3 quick smoke flow")
-    p.add_argument("--window", default="past_hour")
+    p.add_argument(
+        "--window",
+        default="past_hour",
+        choices=WINDOW_CHOICES,
+        help="Time window filter (applied locally after fetch)",
+    )
+    p.add_argument("--sort", default="top", choices=SORT_CHOICES)
     p.add_argument("--limit", type=int, default=1)
     p.add_argument("--approve", action="store_true", help="Approve first pending item and run publish")
     p.add_argument("--reviewed-by", default="operator")
+    p.add_argument("--timeout", type=float, default=None, help="Override HTTP timeout seconds for this command")
     p.set_defaults(func=_cmd_smoke)
 
     return parser
@@ -179,8 +208,9 @@ def _build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = _build_parser()
     args = parser.parse_args()
+    effective_timeout = args.timeout if args.timeout is not None else args.global_timeout
 
-    with httpx.Client(base_url=args.base_url.rstrip("/"), timeout=args.timeout) as client:
+    with httpx.Client(base_url=args.base_url.rstrip("/"), timeout=effective_timeout) as client:
         try:
             return int(args.func(client, args))
         except RuntimeError as error:

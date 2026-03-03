@@ -44,13 +44,13 @@ class ScoringService:
         ollama_base_url: str = "http://localhost:11434",
         ollama_model: str = "qwen3:4b",
         use_ollama: bool = True,
-        ollama_timeout_seconds: float = 10,
+        ollama_timeout_seconds: float = 60,
         ollama_client: httpx.Client | None = None,
     ) -> None:
         self.risk_penalty_weight = risk_penalty_weight
         self.score_version = score_version
         self._ollama_model = ollama_model
-        self._ollama_generate_url = f"{ollama_base_url.rstrip('/')}/api/generate"
+        self._ollama_chat_url = f"{ollama_base_url.rstrip('/')}/api/chat"
         self._ollama_enabled = use_ollama
         self._ollama_client = ollama_client or httpx.Client(timeout=ollama_timeout_seconds)
         self._owns_client = ollama_client is None
@@ -117,43 +117,55 @@ class ScoringService:
         prompt = (
             "Return only compact JSON with keys novelty, depth, tension, reflective_impact, engagement, risk. "
             "Scores must be numeric in range: novelty/depth/tension/reflective_impact/engagement 0..5, risk 0..5.\n"
+            "Do not include markdown fences or additional explanation.\n"
             f"Likes={likes}, comments={comments}\n"
             f"Content:\n{content_text}"
         )
+        response_format = {
+            "type": "object",
+            "properties": {
+                "novelty": {"type": "number"},
+                "depth": {"type": "number"},
+                "tension": {"type": "number"},
+                "reflective_impact": {"type": "number"},
+                "engagement": {"type": "number"},
+                "risk": {"type": "number"},
+            },
+            "required": [
+                "novelty",
+                "depth",
+                "tension",
+                "reflective_impact",
+                "engagement",
+                "risk",
+            ],
+        }
 
         try:
-            response = self._ollama_client.post(
-                self._ollama_generate_url,
-                json={
-                    "model": self._ollama_model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "format": {
-                        "type": "object",
-                        "properties": {
-                            "novelty": {"type": "number"},
-                            "depth": {"type": "number"},
-                            "tension": {"type": "number"},
-                            "reflective_impact": {"type": "number"},
-                            "engagement": {"type": "number"},
-                            "risk": {"type": "number"},
-                        },
-                        "required": [
-                            "novelty",
-                            "depth",
-                            "tension",
-                            "reflective_impact",
-                            "engagement",
-                            "risk",
-                        ],
-                    },
-                    "think": False,
-                },
+            payload = self._chat_with_think_fallback(
+                prompt=prompt,
+                think=True,
+                response_format=response_format,
             )
-            response.raise_for_status()
-            payload = response.json()
-            raw_response = payload.get("response", "")
-            parsed = self._parse_json_object(raw_response)
+            raw_response = self._extract_chat_content(payload)
+            try:
+                parsed = self._parse_json_object(raw_response)
+            except ValueError:
+                retry_prompt = (
+                    "Return ONLY a valid compact JSON object with keys: novelty, depth, tension, "
+                    "reflective_impact, engagement, risk.\n"
+                    "No markdown, no extra words.\n"
+                    "Range: novelty/depth/tension/reflective_impact/engagement 0..5, risk 0..5.\n"
+                    f"Likes={likes}, comments={comments}\n"
+                    f"Content:\n{content_text}"
+                )
+                retry_payload = self._chat_with_think_fallback(
+                    prompt=retry_prompt,
+                    think=True,
+                    response_format="json",
+                )
+                retry_response_text = self._extract_chat_content(retry_payload)
+                parsed = self._parse_json_object(retry_response_text)
 
             return ScoreVector(
                 novelty=self._coerce_float(parsed, "novelty"),
@@ -165,8 +177,62 @@ class ScoringService:
             )
         except Exception as error:  # pragma: no cover - fallback path
             logger.warning("ollama_scoring_fallback", reason=str(error))
-            self._ollama_enabled = False
+            if isinstance(error, httpx.HTTPError):
+                self._ollama_enabled = False
             return None
+
+    def _chat_with_think_fallback(
+        self,
+        *,
+        prompt: str,
+        think: bool,
+        response_format: Any | None = None,
+    ) -> dict[str, Any]:
+        request_payload: dict[str, Any] = {
+            "model": self._ollama_model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+            "think": think,
+        }
+        if response_format is not None:
+            request_payload["format"] = response_format
+
+        response = self._ollama_client.post(self._ollama_chat_url, json=request_payload)
+        if response.status_code < 400:
+            return response.json()
+
+        if not self._is_unknown_param_error(response, "think"):
+            response.raise_for_status()
+
+        compat_payload = dict(request_payload)
+        compat_payload.pop("think", None)
+        compat_payload["thinking"] = think
+
+        compat_response = self._ollama_client.post(self._ollama_chat_url, json=compat_payload)
+        compat_response.raise_for_status()
+        return compat_response.json()
+
+    @staticmethod
+    def _extract_chat_content(payload: dict[str, Any]) -> str:
+        message = payload.get("message")
+        if isinstance(message, dict):
+            content = str(message.get("content", "")).strip()
+            if content:
+                return content
+        raise ValueError("empty_chat_content")
+
+    @staticmethod
+    def _is_unknown_param_error(response: httpx.Response, param_name: str) -> bool:
+        body = response.text.lower()
+        return (
+            param_name.lower() in body
+            and (
+                "unknown" in body
+                or "invalid" in body
+                or "unmarshal" in body
+                or "unexpected" in body
+            )
+        )
 
     @staticmethod
     def _parse_json_object(raw_response: str) -> dict[str, Any]:

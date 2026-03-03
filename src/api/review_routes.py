@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.models.base import get_session
 from src.models.candidate_post import CandidatePost
 from src.models.review_item import ReviewItemRepository
+from src.models.score_card import ScoreCardRepository
 from src.services.audit_service import AuditService
 
 router = APIRouter(tags=["review"])
@@ -27,6 +28,7 @@ async def list_review_items(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     repository = ReviewItemRepository()
+    score_repository = ScoreCardRepository()
     review_items = await repository.list(session, status=status, limit=limit)
 
     items: list[dict] = []
@@ -34,12 +36,28 @@ async def list_review_items(
         candidate = await session.get(CandidatePost, review.candidate_post_id)
         if candidate is None:
             continue
+        score = await score_repository.get_by_candidate(session, review.candidate_post_id)
+        ai_score = None
+        if score is not None:
+            ai_score = {
+                "noveltyScore": score.novelty_score,
+                "depthScore": score.depth_score,
+                "tensionScore": score.tension_score,
+                "reflectiveImpactScore": score.reflective_impact_score,
+                "engagementScore": score.engagement_score,
+                "riskScore": score.risk_score,
+                "contentScore": score.content_score,
+                "finalScore": score.final_score,
+                "scoreVersion": score.score_version,
+                "scoredAt": score.scored_at.isoformat(),
+            }
         items.append(
             {
                 "id": review.id,
                 "candidateId": review.candidate_post_id,
                 "englishDraft": review.english_draft,
                 "chineseTranslationFull": review.chinese_translation_full,
+                "aiScore": ai_score,
                 "riskTags": review.risk_tags,
                 "sourceUrl": candidate.source_url,
                 "capturedAt": candidate.captured_at.isoformat(),

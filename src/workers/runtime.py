@@ -13,7 +13,7 @@ from src.workers.publish_worker import PublishWorker
 from src.workers.review_worker import ReviewWorker
 
 
-async def run_ingestion_once(window: str = "past_hour", limit: int = 100) -> dict[str, int]:
+async def run_ingestion_once(window: str = "past_hour", limit: int = 100, sort: str = "top") -> dict[str, int]:
     settings = get_settings()
     moltbook_client = MoltbookAPIClient(
         base_url=settings.moltbook_api_base_url,
@@ -33,7 +33,7 @@ async def run_ingestion_once(window: str = "past_hour", limit: int = 100) -> dic
     try:
         async with AsyncSessionLocal() as session:
             try:
-                ingestion_metrics = await ingestion_worker.run_cycle(session, window=window, limit=limit)
+                ingestion_metrics = await ingestion_worker.run_cycle(session, window=window, limit=limit, sort=sort)
                 review_metrics = await review_worker.run_cycle(session)
                 await session.commit()
             except Exception:

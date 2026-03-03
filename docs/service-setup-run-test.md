@@ -174,7 +174,7 @@ Use these API calls to validate end-to-end behavior with real runtime wiring.
 Run one small ingestion cycle first (`limit=1`):
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/ops/ingestion/run?window=past_hour&limit=1"
+curl -X POST "http://127.0.0.1:8000/ops/ingestion/run?window=past_hour&sort=top&limit=1"
 ```
 
 Expected:
@@ -234,7 +234,7 @@ Common commands:
 
 ```bash
 uv run python scripts/ops_cli.py health
-uv run python scripts/ops_cli.py ingest --window past_hour --limit 1
+uv run python scripts/ops_cli.py ingest --window past_hour --sort top --limit 1
 uv run python scripts/ops_cli.py review-list --status pending --limit 10
 uv run python scripts/ops_cli.py review-decide <REVIEW_ITEM_ID> --decision approved --reviewed-by operator
 uv run python scripts/ops_cli.py publish-run
@@ -273,7 +273,7 @@ uv run --extra dev pytest tests/unit
 
 - `GET /health`
 - `GET /health/live`
-- `POST /ops/ingestion/run`
+- `POST /ops/ingestion/run` (supports `window`, `sort`, `limit`)
 - `POST /ops/publish/run`
 - `GET /review-items`
 - `POST /review-items/{reviewItemId}/decision`
@@ -288,7 +288,8 @@ uv run --extra dev pytest tests/unit
   - Confirm PostgreSQL/Redis are running (full mode)
 - `persisted_count=0` after ingestion:
   - Data may be deduplicated against existing `candidate_posts`
-  - Retry with a different `window` or a fresh DB for smoke testing
+  - Retry with a different `window`/`sort` or a fresh DB for smoke testing
+  - Ingestion uses API `sort` and applies local time-window filtering to avoid large upstream fetches
 - Publish flow appears inactive:
   - Check if publishing was paused via `POST /publishing/pause`
 - FastAPI deprecation warnings about `on_event`:

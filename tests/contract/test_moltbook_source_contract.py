@@ -1,3 +1,5 @@
+from datetime import UTC, datetime, timedelta
+
 import httpx
 import pytest
 
@@ -6,18 +8,29 @@ from src.integrations.moltbook_api_client import MoltbookAPIClient
 
 @pytest.mark.asyncio
 async def test_list_posts_returns_required_contract_fields() -> None:
+    now = datetime.now(tz=UTC)
+
     async def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.params["window"] == "today"
+        assert request.url.params["sort"] == "top"
+        assert int(request.url.params["limit"]) <= 25
         return httpx.Response(
             status_code=200,
             json={
                 "items": [
                     {
+                        "source_url": "https://moltbook.com/p/old",
+                        "source_post_id": "old",
+                        "author_handle": "old-author",
+                        "content_text": "Old Moltbook post",
+                        "created_at": (now - timedelta(days=2)).isoformat().replace("+00:00", "Z"),
+                        "engagement_summary": {"likes": 1},
+                    },
+                    {
                         "source_url": "https://moltbook.com/p/1",
                         "source_post_id": "1",
                         "author_handle": "alice",
                         "content_text": "Hello Moltbook",
-                        "created_at": "2026-02-24T00:00:00Z",
+                        "created_at": now.isoformat().replace("+00:00", "Z"),
                         "engagement_summary": {"likes": 3},
                     }
                 ],
@@ -47,3 +60,11 @@ async def test_list_posts_rejects_unsupported_window() -> None:
 
     with pytest.raises(ValueError, match="Unsupported window"):
         await client.list_posts(window="unknown")
+
+
+@pytest.mark.asyncio
+async def test_list_posts_rejects_unsupported_sort() -> None:
+    client = MoltbookAPIClient(base_url="https://api.moltbook.test", token="token")
+
+    with pytest.raises(ValueError, match="Unsupported sort"):
+        await client.list_posts(window="today", sort="controversial")

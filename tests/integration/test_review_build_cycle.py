@@ -13,8 +13,8 @@ from src.workers.review_worker import ReviewWorker
 
 
 class ReviewBuildMoltbookClient:
-    async def list_posts(self, window: str, cursor: str | None = None, limit: int = 100):
-        _ = (window, cursor, limit)
+    async def list_posts(self, window: str, cursor: str | None = None, limit: int = 100, sort: str = "top"):
+        _ = (window, cursor, limit, sort)
         return (
             [
                 MoltbookPost(

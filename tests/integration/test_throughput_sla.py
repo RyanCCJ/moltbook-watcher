@@ -10,8 +10,8 @@ from src.workers.ingestion_worker import IngestionWorker
 
 
 class ThroughputClient:
-    async def list_posts(self, window: str, cursor: str | None = None, limit: int = 100):
-        _ = (window, cursor, limit)
+    async def list_posts(self, window: str, cursor: str | None = None, limit: int = 100, sort: str = "top"):
+        _ = (window, cursor, limit, sort)
         posts = [
             MoltbookPost(
                 source_url=f"https://moltbook.com/p/{i}",

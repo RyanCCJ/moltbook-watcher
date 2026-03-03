@@ -1,3 +1,5 @@
+import json
+
 import httpx
 
 from src.services.scoring_service import ScoreVector, ScoringService
@@ -48,11 +50,16 @@ def test_final_score_is_clamped_between_zero_and_five() -> None:
 
 def test_score_candidate_prefers_ollama_when_available() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path.endswith("/api/generate")
+        assert request.url.path.endswith("/api/chat")
+        payload = json.loads(request.content.decode("utf-8"))
+        assert payload["think"] is True
         return httpx.Response(
             200,
             json={
-                "response": '{"novelty":4.5,"depth":4.0,"tension":3.5,"reflective_impact":4.2,"engagement":3.8,"risk":1}'
+                "message": {
+                    "role": "assistant",
+                    "content": '{"novelty":4.5,"depth":4.0,"tension":3.5,"reflective_impact":4.2,"engagement":3.8,"risk":1}',
+                }
             },
         )
 
@@ -69,6 +76,104 @@ def test_score_candidate_prefers_ollama_when_available() -> None:
     assert result.risk == 1
     assert result.content_score == 4.0
     assert result.final_score == 3.8
+
+
+def test_score_candidate_falls_back_to_legacy_thinking_flag_when_think_is_rejected() -> None:
+    call_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        payload = json.loads(request.content.decode("utf-8"))
+
+        if call_count == 1:
+            assert "think" in payload
+            return httpx.Response(400, text='{"error":"unknown field \\"think\\""}')
+
+        assert "thinking" in payload
+        return httpx.Response(
+            200,
+            json={
+                "message": {
+                    "role": "assistant",
+                    "content": '{"novelty":4.2,"depth":3.9,"tension":3.6,"reflective_impact":4.0,"engagement":3.7,"risk":1}',
+                }
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    service = ScoringService(ollama_client=client)
+
+    result = service.score_candidate("fallback content", {"likes": 2})
+
+    assert call_count == 2
+    assert result.novelty == 4.2
+    assert result.final_score == 3.68
+
+
+def test_score_candidate_retries_with_json_mode_when_first_response_is_not_json() -> None:
+    call_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        payload = json.loads(request.content.decode("utf-8"))
+
+        if call_count == 1:
+            assert payload["format"]["type"] == "object"
+            return httpx.Response(
+                200, json={"message": {"role": "assistant", "content": "novelty=4, depth=4, risk=1"}}
+            )
+
+        assert payload["format"] == "json"
+        return httpx.Response(
+            200,
+            json={
+                "message": {
+                    "role": "assistant",
+                    "content": '{"novelty":4.0,"depth":3.5,"tension":3.0,"reflective_impact":4.0,"engagement":3.5,"risk":1}',
+                }
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    service = ScoringService(ollama_client=client)
+
+    result = service.score_candidate("retry content", {"likes": 3})
+
+    assert call_count == 2
+    assert result.novelty == 4.0
+    assert result.final_score == 3.4
+
+
+def test_score_candidate_does_not_disable_ollama_after_invalid_json() -> None:
+    call_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        if call_count <= 2:
+            return httpx.Response(200, json={"message": {"role": "assistant", "content": "still-not-json"}})
+
+        return httpx.Response(
+            200,
+            json={
+                "message": {
+                    "role": "assistant",
+                    "content": '{"novelty":4.1,"depth":4.0,"tension":3.8,"reflective_impact":4.2,"engagement":3.9,"risk":1}',
+                }
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    service = ScoringService(ollama_client=client)
+
+    first = service.score_candidate("first try", {"likes": 1})
+    second = service.score_candidate("second try", {"likes": 1})
+
+    assert call_count == 3
+    assert first.score_version == "v1"
+    assert second.novelty == 4.1
 
 
 def test_score_candidate_falls_back_to_heuristic_and_disables_after_ollama_error() -> None:

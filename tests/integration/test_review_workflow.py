@@ -37,7 +37,7 @@ async def test_review_decision_lifecycle_transitions() -> None:
             session,
             candidate_post_id=candidate.id,
             english_draft="Draft",
-            chinese_translation_full="草稿",
+            chinese_translation_full="Draft translation",
             risk_tags=["low"],
         )
 
