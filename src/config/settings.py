@@ -16,6 +16,8 @@ class Settings(BaseSettings):
 
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen3:4b"
+    translation_language: str = ""
+    threads_language: str = "en"
 
     moltbook_api_base_url: str = "https://api.moltbook.internal"
     moltbook_api_token: str = "local-test-token"

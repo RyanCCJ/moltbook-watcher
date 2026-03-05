@@ -29,5 +29,7 @@ Thumbs.db
 
 # Agent artifacts
 .agent/
+.claude/
 .codex/
+.gemini/
 .specify/

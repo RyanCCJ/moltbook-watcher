@@ -45,7 +45,7 @@ async def test_review_list_and_decision_endpoints_follow_contract() -> None:
             candidate_post_id=candidate.id,
             english_draft="Draft",
             chinese_translation_full="Draft translation",
-            risk_tags="[]",
+            risk_tags=[],
             follow_up_rationale=None,
             decision="pending",
         )
@@ -73,7 +73,11 @@ async def test_review_list_and_decision_endpoints_follow_contract() -> None:
 
         payload = list_response.json()
         assert "items" in payload
-        assert payload["items"][0]["englishDraft"] == "Draft"
+        assert payload["items"][0]["draftContent"] == "Draft"
+        assert payload["items"][0]["translatedContent"] == "Draft translation"
+        assert payload["items"][0]["threadsDraft"] == ""
+        assert payload["items"][0]["topCommentsSnapshot"] == []
+        assert payload["items"][0]["topCommentsTranslated"] == []
         assert payload["items"][0]["aiScore"]["finalScore"] == 3.64
         assert payload["items"][0]["aiScore"]["scoreVersion"] == "contract-v1"
 

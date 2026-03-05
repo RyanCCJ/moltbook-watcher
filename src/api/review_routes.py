@@ -55,8 +55,11 @@ async def list_review_items(
             {
                 "id": review.id,
                 "candidateId": review.candidate_post_id,
-                "englishDraft": review.english_draft,
-                "chineseTranslationFull": review.chinese_translation_full,
+                "draftContent": review.english_draft,
+                "translatedContent": review.chinese_translation_full,
+                "threadsDraft": review.threads_draft,
+                "topCommentsSnapshot": review.top_comments_snapshot,
+                "topCommentsTranslated": review.top_comments_translated,
                 "aiScore": ai_score,
                 "riskTags": review.risk_tags,
                 "sourceUrl": candidate.source_url,

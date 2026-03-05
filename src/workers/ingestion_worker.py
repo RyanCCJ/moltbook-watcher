@@ -63,6 +63,9 @@ class IngestionWorker:
                 filtered_duplicate_count += 1
                 continue
 
+            if post.source_post_id:
+                post.top_comments = await self._moltbook_client.fetch_comments(post.source_post_id, limit=5, sort="top")
+
             fingerprint = self._dedup_service.build_fingerprint(post.content_text)
 
             candidate = await self._candidate_repo.create(
@@ -76,7 +79,11 @@ class IngestionWorker:
                 dedup_fingerprint=fingerprint,
             )
 
-            score = self._scoring_service.score_candidate(post.content_text, post.engagement_summary)
+            score = self._scoring_service.score_candidate(
+                post.content_text,
+                post.engagement_summary,
+                post.top_comments,
+            )
             await self._score_repo.create(
                 session,
                 candidate_post_id=candidate.id,

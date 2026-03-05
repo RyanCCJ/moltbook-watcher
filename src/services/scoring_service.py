@@ -3,13 +3,16 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from src.services.logging_service import get_logger
 
 logger = get_logger(__name__)
+
+if TYPE_CHECKING:
+    from src.integrations.moltbook_api_client import MoltbookComment
 
 
 @dataclass(slots=True)
@@ -76,26 +79,37 @@ class ScoringService:
             score_version=self.score_version,
         )
 
-    def score_candidate(self, content_text: str, engagement_summary: dict | None = None) -> ScoreResult:
-        ollama_vector = self._score_with_ollama(content_text, engagement_summary or {})
+    def score_candidate(
+        self,
+        content_text: str,
+        engagement_summary: dict | None = None,
+        top_comments: list[MoltbookComment] | None = None,
+    ) -> ScoreResult:
+        ollama_vector = self._score_with_ollama(content_text, engagement_summary or {}, top_comments or [])
         if ollama_vector is not None:
             return self.compute_scores(ollama_vector)
 
-        return self.compute_scores(self._score_with_heuristic(content_text, engagement_summary))
+        return self.compute_scores(self._score_with_heuristic(content_text, engagement_summary, top_comments or []))
 
     def close(self) -> None:
         if self._owns_client:
             self._ollama_client.close()
 
-    def _score_with_heuristic(self, content_text: str, engagement_summary: dict | None = None) -> ScoreVector:
+    def _score_with_heuristic(
+        self,
+        content_text: str,
+        engagement_summary: dict | None = None,
+        top_comments: list[MoltbookComment] | None = None,
+    ) -> ScoreVector:
         likes = int((engagement_summary or {}).get("likes", 0))
+        comment_count = len(top_comments or [])
         text_len = len(content_text.strip())
 
         novelty = min(5.0, round(2.0 + text_len / 120, 2))
         depth = min(5.0, round(1.5 + text_len / 150, 2))
         tension = min(5.0, round(1.0 + ("?" in content_text) * 1.5 + ("!" in content_text) * 0.5, 2))
         reflective_impact = min(5.0, round(1.5 + text_len / 180, 2))
-        engagement = min(5.0, round(1.0 + likes / 10, 2))
+        engagement = min(5.0, round(1.0 + likes / 10 + comment_count / 20, 2))
         risk = 1 if "unsafe" not in content_text.lower() else 4
 
         return ScoreVector(
@@ -107,19 +121,26 @@ class ScoringService:
             risk=risk,
         )
 
-    def _score_with_ollama(self, content_text: str, engagement_summary: dict[str, Any]) -> ScoreVector | None:
+    def _score_with_ollama(
+        self,
+        content_text: str,
+        engagement_summary: dict[str, Any],
+        top_comments: list[MoltbookComment],
+    ) -> ScoreVector | None:
         if not self._ollama_enabled:
             return None
 
         likes = int(engagement_summary.get("likes", 0))
         comments = int(engagement_summary.get("comments", 0))
+        comments_section = self._format_top_comments(top_comments)
 
         prompt = (
             "Return only compact JSON with keys novelty, depth, tension, reflective_impact, engagement, risk. "
             "Scores must be numeric in range: novelty/depth/tension/reflective_impact/engagement 0..5, risk 0..5.\n"
             "Do not include markdown fences or additional explanation.\n"
             f"Likes={likes}, comments={comments}\n"
-            f"Content:\n{content_text}"
+            f"Content:\n{content_text}\n\n"
+            f"{comments_section}"
         )
         response_format = {
             "type": "object",
@@ -157,7 +178,8 @@ class ScoringService:
                     "No markdown, no extra words.\n"
                     "Range: novelty/depth/tension/reflective_impact/engagement 0..5, risk 0..5.\n"
                     f"Likes={likes}, comments={comments}\n"
-                    f"Content:\n{content_text}"
+                    f"Content:\n{content_text}\n\n"
+                    f"{comments_section}"
                 )
                 retry_payload = self._chat_with_think_fallback(
                     prompt=retry_prompt,
@@ -205,8 +227,10 @@ class ScoringService:
             response.raise_for_status()
 
         compat_payload = dict(request_payload)
-        compat_payload.pop("think", None)
-        compat_payload["thinking"] = think
+        if think:
+            compat_payload["think"] = False
+        else:
+            compat_payload.pop("think", None)
 
         compat_response = self._ollama_client.post(self._ollama_chat_url, json=compat_payload)
         compat_response.raise_for_status()
@@ -224,14 +248,18 @@ class ScoringService:
     @staticmethod
     def _is_unknown_param_error(response: httpx.Response, param_name: str) -> bool:
         body = response.text.lower()
+        compat_error_patterns = (
+            "unknown",
+            "invalid",
+            "unmarshal",
+            "unexpected",
+            "does not support thinking",
+            "doesn't support thinking",
+            "not support thinking",
+        )
         return (
             param_name.lower() in body
-            and (
-                "unknown" in body
-                or "invalid" in body
-                or "unmarshal" in body
-                or "unexpected" in body
-            )
+            and any(pattern in body for pattern in compat_error_patterns)
         )
 
     @staticmethod
@@ -259,3 +287,14 @@ class ScoringService:
     def _coerce_int(payload: dict[str, Any], key: str) -> int:
         value = int(round(float(payload[key])))
         return max(0, min(5, value))
+
+    @staticmethod
+    def _format_top_comments(top_comments: list[MoltbookComment]) -> str:
+        if not top_comments:
+            return "Top comments:\n(none)"
+
+        lines: list[str] = []
+        for index, comment in enumerate(top_comments, start=1):
+            author = comment.author_handle or "unknown"
+            lines.append(f"{index}. @{author}: {comment.content_text}")
+        return "Top comments:\n" + "\n".join(lines)

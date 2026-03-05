@@ -27,8 +27,10 @@ async def run_ingestion_once(window: str = "past_hour", limit: int = 100, sort: 
     review_payload_service = ReviewPayloadService(
         ollama_base_url=settings.ollama_base_url,
         ollama_model=settings.ollama_model,
+        translation_language=settings.translation_language,
+        threads_language=settings.threads_language,
     )
-    review_worker = ReviewWorker(payload_service=review_payload_service)
+    review_worker = ReviewWorker(payload_service=review_payload_service, moltbook_client=moltbook_client)
 
     try:
         async with AsyncSessionLocal() as session:

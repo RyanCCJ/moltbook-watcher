@@ -2,6 +2,7 @@ import json
 
 import httpx
 
+from src.integrations.moltbook_api_client import MoltbookComment
 from src.services.scoring_service import ScoreVector, ScoringService
 
 
@@ -78,7 +79,7 @@ def test_score_candidate_prefers_ollama_when_available() -> None:
     assert result.final_score == 3.8
 
 
-def test_score_candidate_falls_back_to_legacy_thinking_flag_when_think_is_rejected() -> None:
+def test_score_candidate_retries_with_think_false_when_think_is_rejected() -> None:
     call_count = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -90,7 +91,8 @@ def test_score_candidate_falls_back_to_legacy_thinking_flag_when_think_is_reject
             assert "think" in payload
             return httpx.Response(400, text='{"error":"unknown field \\"think\\""}')
 
-        assert "thinking" in payload
+        assert "thinking" not in payload
+        assert payload["think"] is False
         return httpx.Response(
             200,
             json={
@@ -195,3 +197,59 @@ def test_score_candidate_falls_back_to_heuristic_and_disables_after_ollama_error
     assert second.score_version == "v1"
     assert first.risk == 1
     assert second.risk == 1
+
+
+def test_score_candidate_includes_top_comments_in_prompt() -> None:
+    captured_prompt = ""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured_prompt
+        payload = json.loads(request.content.decode("utf-8"))
+        captured_prompt = payload["messages"][0]["content"]
+        return httpx.Response(
+            200,
+            json={
+                "message": {
+                    "role": "assistant",
+                    "content": '{"novelty":4.0,"depth":4.0,"tension":4.0,"reflective_impact":4.0,"engagement":4.0,"risk":1}',
+                }
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    service = ScoringService(ollama_client=client)
+
+    service.score_candidate(
+        "Prompt with comments",
+        {"likes": 2, "comments": 1},
+        top_comments=[MoltbookComment(author_handle="alice", content_text="Great insight", upvotes=12)],
+    )
+
+    assert "Top comments:" in captured_prompt
+    assert "@alice: Great insight" in captured_prompt
+
+
+def test_score_candidate_prompt_marks_no_comments_when_absent() -> None:
+    captured_prompt = ""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured_prompt
+        payload = json.loads(request.content.decode("utf-8"))
+        captured_prompt = payload["messages"][0]["content"]
+        return httpx.Response(
+            200,
+            json={
+                "message": {
+                    "role": "assistant",
+                    "content": '{"novelty":3.0,"depth":3.0,"tension":3.0,"reflective_impact":3.0,"engagement":3.0,"risk":1}',
+                }
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    service = ScoringService(ollama_client=client)
+
+    service.score_candidate("Prompt without comments", {"likes": 1}, top_comments=[])
+
+    assert "Top comments:" in captured_prompt
+    assert "(none)" in captured_prompt

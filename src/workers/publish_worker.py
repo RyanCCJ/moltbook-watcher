@@ -10,6 +10,7 @@ from src.models.candidate_post import CandidatePost, CandidatePostRepository
 from src.models.lifecycle import CandidateStatus
 from src.models.publish_job import PublishJob, PublishJobRepository
 from src.models.published_post_record import PublishedPostRecordRepository
+from src.models.review_item import ReviewItem
 from src.services.publish_mode_service import PublishControlService, publish_control
 from src.services.publish_retry_policy import PublishRetryPolicy
 
@@ -111,6 +112,27 @@ class PublishWorker:
         if candidate.status == CandidateStatus.APPROVED.value:
             await self._candidates.transition_status(session, candidate, "scheduled")
 
+        review_item = await session.scalar(
+            select(ReviewItem).where(ReviewItem.candidate_post_id == candidate.id).order_by(ReviewItem.created_at.desc())
+        )
+        if review_item is not None and not review_item.threads_draft.strip():
+            job.status = "failed_terminal"
+            job.last_error_code = "missing_threads_draft"
+            job.last_error_message = "Threads draft is empty; skip raw-content fallback"
+            job.updated_at = datetime.now(tz=UTC)
+            session.add(job)
+            await self._notification_service.notify_terminal_failure(
+                session,
+                job,
+                error_message=job.last_error_message,
+            )
+            await session.flush()
+            return "failed_terminal"
+
+        publish_text = candidate.raw_content
+        if review_item is not None and review_item.threads_draft.strip():
+            publish_text = review_item.threads_draft
+
         job.status = "in_progress"
         job.attempt_count += 1
         job.updated_at = datetime.now(tz=UTC)
@@ -119,7 +141,7 @@ class PublishWorker:
 
         try:
             post_id = await self._threads_client.publish_post(
-                text=candidate.raw_content,
+                text=publish_text,
                 source_url=candidate.source_url,
             )
         except Exception as error:

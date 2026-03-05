@@ -8,6 +8,7 @@ from src.models.base import Base
 from src.models.candidate_post import CandidatePostRepository
 from src.models.publish_job import PublishJob, PublishJobRepository
 from src.models.published_post_record import PublishedPostRecord
+from src.models.review_item import ReviewItemRepository
 from src.services.publish_mode_service import PublishControlService
 from src.workers.publish_worker import PublishWorker
 
@@ -15,9 +16,10 @@ from src.workers.publish_worker import PublishWorker
 class FakeThreadsClient:
     def __init__(self, outcomes: list[str | Exception]) -> None:
         self._outcomes = outcomes
+        self.calls: list[tuple[str, str]] = []
 
     async def publish_post(self, *, text: str, source_url: str) -> str:
-        _ = (text, source_url)
+        self.calls.append((text, source_url))
         outcome = self._outcomes.pop(0)
         if isinstance(outcome, Exception):
             raise outcome
@@ -43,6 +45,7 @@ async def test_publish_worker_handles_retries_success_and_terminal_notification(
 
     candidate_repo = CandidatePostRepository()
     publish_repo = PublishJobRepository()
+    review_repo = ReviewItemRepository()
 
     async with async_session() as session:
         candidate_success = await candidate_repo.create(
@@ -74,6 +77,23 @@ async def test_publish_worker_handles_retries_success_and_terminal_notification(
         await candidate_repo.transition_status(session, candidate_fail, "queued")
         await candidate_repo.transition_status(session, candidate_fail, "reviewed")
         await candidate_repo.transition_status(session, candidate_fail, "approved")
+
+        await review_repo.create(
+            session,
+            candidate_post_id=candidate_success.id,
+            english_draft="draft",
+            chinese_translation_full="draft",
+            risk_tags=["low-risk"],
+            threads_draft="threads draft success\n\nhttps://moltbook.com/p/success",
+        )
+        await review_repo.create(
+            session,
+            candidate_post_id=candidate_fail.id,
+            english_draft="draft",
+            chinese_translation_full="draft",
+            risk_tags=["low-risk"],
+            threads_draft="",
+        )
 
         await publish_repo.create(
             session,
@@ -110,5 +130,8 @@ async def test_publish_worker_handles_retries_success_and_terminal_notification(
 
     assert any(job.status == "published" for job in jobs)
     assert any(job.status == "failed_terminal" for job in jobs)
+    assert any(job.last_error_code == "missing_threads_draft" for job in jobs)
     assert len(records) == 1
     assert len(notifications.events) == 1
+    assert any(text.startswith("threads draft success") for text, _ in threads_client.calls)
+    assert not any(text == "publish fail" for text, _ in threads_client.calls)

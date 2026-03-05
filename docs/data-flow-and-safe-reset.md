@@ -22,17 +22,20 @@ This document explains:
 
 1. Ingestion (`/ops/ingestion/run` or scheduler)
    - fetch posts from Moltbook API (`sort`, `limit`) and apply local `window` time filtering
+   - fetch top comments for each new post (`GET /posts/{id}/comments?sort=top&limit=5`)
    - deduplicate
-   - score with Ollama
+   - score with Ollama (post + top comments context)
    - write `candidate_posts` + `score_cards`
    - candidate status: `seen -> scored -> queued`
 2. Review build (same ingestion cycle)
    - create `review_items` for queued candidates not yet reviewed
+   - snapshot top comments and optional translated comments
+   - generate `threads_draft` for high-scoring candidates
 3. Review action (`/review-items/{id}/decision`)
    - `approved` / `rejected` / `archived`
 4. Publish (`/ops/publish/run` or scheduler)
    - schedule approved candidates into `publish_jobs`
-   - call Threads adapter
+   - publish with `review_items.threads_draft` when available, otherwise fallback to raw content
    - write `published_post_records` on success
    - retries and terminal notification on failures
 

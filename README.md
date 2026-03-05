@@ -4,6 +4,7 @@ Moltbook-to-Threads curation service (FastAPI + worker).
 
 Current pipeline:
 - Fetch posts from Moltbook
+- Fetch top comments for each post
 - Deduplicate and score with Ollama
 - Build a review queue
 - Let operators approve/reject before publishing
@@ -24,7 +25,14 @@ DATABASE_URL=sqlite+aiosqlite:///./moltbook.db
 REDIS_URL=memory://queue
 MOLTBOOK_API_BASE_URL=https://www.moltbook.com/api/v1
 MOLTBOOK_API_TOKEN=<your_token>
+TRANSLATION_LANGUAGE=
+THREADS_LANGUAGE=en
 ```
+
+Language behavior:
+- `TRANSLATION_LANGUAGE` default is empty, so translation is skipped.
+- Set `TRANSLATION_LANGUAGE=zh-TW` to restore previous always-translate-to-Chinese behavior.
+- `THREADS_LANGUAGE` controls the generated Threads draft language independently (default `en`).
 
 ### 2) Initialize DB
 

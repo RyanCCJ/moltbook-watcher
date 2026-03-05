@@ -65,7 +65,13 @@ Set in `.env`:
 ```env
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=qwen3:4b
+TRANSLATION_LANGUAGE=
+THREADS_LANGUAGE=en
 ```
+
+Notes:
+- `TRANSLATION_LANGUAGE` is optional. Empty means no translation calls are made.
+- `THREADS_LANGUAGE` controls the language of generated Threads draft text.
 
 ---
 

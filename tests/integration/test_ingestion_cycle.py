@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from src.integrations.moltbook_api_client import MoltbookPost
+from src.integrations.moltbook_api_client import MoltbookComment, MoltbookPost
 from src.models.base import Base
 from src.models.candidate_post import CandidatePost
 from src.models.score_card import ScoreCard
@@ -45,10 +45,19 @@ class FakeMoltbookClient:
             None,
         )
 
+    async def fetch_comments(self, post_id: str, limit: int = 5, sort: str = "top"):
+        _ = (limit, sort)
+        return [MoltbookComment(author_handle="commenter", content_text=f"Comment for {post_id}", upvotes=2)]
+
 
 class FakeScoringService:
-    def score_candidate(self, content_text: str, engagement_summary: dict | None = None) -> ScoreResult:
-        _ = (content_text, engagement_summary)
+    def score_candidate(
+        self,
+        content_text: str,
+        engagement_summary: dict | None = None,
+        top_comments: list[MoltbookComment] | None = None,
+    ) -> ScoreResult:
+        _ = (content_text, engagement_summary, top_comments)
         return ScoreResult(
             novelty=3.5,
             depth=3.5,

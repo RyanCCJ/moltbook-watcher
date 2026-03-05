@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from src.integrations.moltbook_api_client import MoltbookPost
+from src.integrations.moltbook_api_client import MoltbookComment, MoltbookPost
 from src.models.base import Base
 from src.services.scoring_service import ScoreResult
 from src.workers.ingestion_worker import IngestionWorker
@@ -25,10 +25,14 @@ class ThroughputClient:
         ]
         return posts, None
 
+    async def fetch_comments(self, post_id: str, limit: int = 5, sort: str = "top"):
+        _ = (post_id, limit, sort)
+        return [MoltbookComment(author_handle="perf-comment", content_text="perf", upvotes=1)]
+
 
 class ThroughputScorer:
-    def score_candidate(self, content_text: str, engagement_summary=None):
-        _ = (content_text, engagement_summary)
+    def score_candidate(self, content_text: str, engagement_summary=None, top_comments=None):
+        _ = (content_text, engagement_summary, top_comments)
         return ScoreResult(
             novelty=3.0,
             depth=3.0,

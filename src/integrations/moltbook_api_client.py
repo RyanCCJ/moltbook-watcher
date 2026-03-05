@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 import httpx
+
+from src.services.logging_service import get_logger
 
 _SUPPORTED_WINDOWS = {"all_time", "year", "month", "week", "today", "past_hour"}
 _SUPPORTED_SORTS = {"hot", "new", "top", "rising"}
@@ -11,6 +13,17 @@ _MAX_SCAN_PAGES = 3
 _MAX_SCAN_POSTS = 60
 _MIN_SCAN_POSTS = 12
 _PAGE_LIMIT_CAP = 25
+_LEGACY_POST_URL_PREFIX = "https://www.moltbook.com/posts/"
+_CANONICAL_POST_URL_PREFIX = "https://www.moltbook.com/post/"
+
+logger = get_logger(__name__)
+
+
+@dataclass(slots=True)
+class MoltbookComment:
+    author_handle: str | None
+    content_text: str
+    upvotes: int
 
 
 @dataclass(slots=True)
@@ -21,6 +34,7 @@ class MoltbookPost:
     content_text: str
     created_at: datetime
     engagement_summary: dict | None
+    top_comments: list[MoltbookComment] = field(default_factory=list)
 
 
 class MoltbookAPIClient:
@@ -80,6 +94,45 @@ class MoltbookAPIClient:
 
         return collected[:target_limit], cursor_token
 
+    async def fetch_comments(
+        self,
+        post_id: str,
+        limit: int = 5,
+        sort: str = "top",
+    ) -> list[MoltbookComment]:
+        if not post_id:
+            return []
+
+        params = {
+            "sort": sort,
+            "limit": max(1, limit),
+        }
+        try:
+            response = await self._client.get(
+                f"{self._base_url}/posts/{post_id}/comments",
+                params=params,
+                headers={"Authorization": f"Bearer {self._token}"},
+            )
+            response.raise_for_status()
+            payload = response.json()
+
+            raw_items = payload.get("items")
+            if raw_items is None:
+                raw_items = payload.get("comments", [])
+            if not isinstance(raw_items, list):
+                return []
+
+            parsed_comments: list[MoltbookComment] = []
+            for item in raw_items[: max(1, limit)]:
+                try:
+                    parsed_comments.append(self._parse_comment(item))
+                except ValueError:
+                    continue
+            return parsed_comments
+        except Exception as error:  # pragma: no cover - non-fatal path
+            logger.warning("moltbook_fetch_comments_failed", post_id=post_id, reason=str(error))
+            return []
+
     async def close(self) -> None:
         if self._owns_client:
             await self._client.aclose()
@@ -94,7 +147,9 @@ class MoltbookAPIClient:
         source_post_id = item.get("source_post_id") or item.get("id")
         source_url = item.get("source_url")
         if not source_url and source_post_id:
-            source_url = f"https://www.moltbook.com/posts/{source_post_id}"
+            source_url = f"{_CANONICAL_POST_URL_PREFIX}{source_post_id}"
+        if source_url:
+            source_url = MoltbookAPIClient._normalize_source_url(source_url)
         if not source_url:
             raise ValueError("Missing source_url and post id in Moltbook post payload")
 
@@ -114,6 +169,35 @@ class MoltbookAPIClient:
             created_at=parsed_dt,
             engagement_summary=item.get("engagement_summary"),
         )
+
+    @staticmethod
+    def _parse_comment(item: dict) -> MoltbookComment:
+        author_handle = item.get("author_handle")
+        if author_handle is None and isinstance(item.get("author"), dict):
+            author_handle = item["author"].get("handle") or item["author"].get("name")
+
+        content_text = item.get("content_text") or item.get("content") or item.get("body") or ""
+        content_text = str(content_text).strip()
+        if not content_text:
+            raise ValueError("missing_comment_content")
+
+        upvotes_raw = item.get("upvotes")
+        if upvotes_raw is None and isinstance(item.get("engagement_summary"), dict):
+            upvotes_raw = item["engagement_summary"].get("upvotes")
+        if upvotes_raw is None:
+            upvotes_raw = 0
+
+        return MoltbookComment(
+            author_handle=author_handle,
+            content_text=content_text,
+            upvotes=max(0, int(upvotes_raw)),
+        )
+
+    @staticmethod
+    def _normalize_source_url(source_url: str) -> str:
+        if source_url.startswith(_LEGACY_POST_URL_PREFIX):
+            return source_url.replace(_LEGACY_POST_URL_PREFIX, _CANONICAL_POST_URL_PREFIX, 1)
+        return source_url
 
     @staticmethod
     def _matches_window(created_at: datetime, window: str) -> bool:

@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from src.integrations.moltbook_api_client import MoltbookPost
+from src.integrations.moltbook_api_client import MoltbookComment, MoltbookPost
 from src.models.base import Base
 from src.models.review_item import ReviewItem
 from src.services.scoring_service import ScoreResult
@@ -29,10 +29,14 @@ class ReviewBuildMoltbookClient:
             None,
         )
 
+    async def fetch_comments(self, post_id: str, limit: int = 5, sort: str = "top"):
+        _ = (post_id, limit, sort)
+        return [MoltbookComment(author_handle="reviewer", content_text="Helpful context", upvotes=3)]
+
 
 class ReviewBuildScorer:
-    def score_candidate(self, content_text: str, engagement_summary=None):
-        _ = (content_text, engagement_summary)
+    def score_candidate(self, content_text: str, engagement_summary=None, top_comments=None):
+        _ = (content_text, engagement_summary, top_comments)
         return ScoreResult(
             novelty=4.0,
             depth=4.0,
@@ -53,8 +57,11 @@ async def test_review_worker_builds_pending_review_items_from_queued_candidates(
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
 
-    ingestion_worker = IngestionWorker(moltbook_client=ReviewBuildMoltbookClient(), scoring_service=ReviewBuildScorer())
-    review_worker = ReviewWorker()
+    moltbook_client = ReviewBuildMoltbookClient()
+    ingestion_worker = IngestionWorker(moltbook_client=moltbook_client, scoring_service=ReviewBuildScorer())
+    from src.services.review_payload_service import ReviewPayloadService
+
+    review_worker = ReviewWorker(payload_service=ReviewPayloadService(use_ollama=False), moltbook_client=moltbook_client)
 
     async with async_session() as session:
         await ingestion_worker.run_cycle(session, window="today")
@@ -63,7 +70,11 @@ async def test_review_worker_builds_pending_review_items_from_queued_candidates(
         await session.commit()
 
         review_count = await session.scalar(select(func.count()).select_from(ReviewItem))
+        review_item = (await session.scalars(select(ReviewItem))).first()
 
     assert first.created_count == 1
     assert second.created_count == 0
     assert review_count == 1
+    assert review_item is not None
+    assert review_item.top_comments_snapshot[0]["content_text"] == "Helpful context"
+    assert review_item.top_comments_translated == []

@@ -23,6 +23,9 @@ class ReviewItem(Base):
     english_draft: Mapped[str] = mapped_column(Text, nullable=False)
     chinese_translation_full: Mapped[str] = mapped_column(Text, nullable=False)
     risk_tags: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    top_comments_snapshot: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    top_comments_translated: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    threads_draft: Mapped[str] = mapped_column(Text, nullable=False, default="")
     follow_up_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
     decision: Mapped[str] = mapped_column(String(32), nullable=False, default=ReviewDecision.PENDING.value)
     reviewed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -44,6 +47,9 @@ class ReviewItemRepository:
         english_draft: str,
         chinese_translation_full: str,
         risk_tags: list[str],
+        top_comments_snapshot: list | None = None,
+        top_comments_translated: list | None = None,
+        threads_draft: str = "",
         follow_up_rationale: str | None = None,
     ) -> ReviewItem:
         review_item = ReviewItem(
@@ -51,6 +57,9 @@ class ReviewItemRepository:
             english_draft=english_draft,
             chinese_translation_full=chinese_translation_full,
             risk_tags=risk_tags,
+            top_comments_snapshot=top_comments_snapshot or [],
+            top_comments_translated=top_comments_translated or [],
+            threads_draft=threads_draft,
             follow_up_rationale=follow_up_rationale,
             decision=ReviewDecision.PENDING.value,
         )

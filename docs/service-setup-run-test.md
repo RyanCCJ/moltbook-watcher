@@ -51,6 +51,8 @@ Important variables:
 - `REDIS_URL`
 - `MOLTBOOK_API_BASE_URL`
 - `MOLTBOOK_API_TOKEN`
+- `TRANSLATION_LANGUAGE` (empty by default, skips translation)
+- `THREADS_LANGUAGE` (default `en`, controls generated Threads draft language)
 - `THREADS_API_BASE_URL`
 - `THREADS_API_TOKEN`
 - `THREADS_ACCOUNT_ID`
