@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from dataclasses import dataclass
@@ -79,13 +80,13 @@ class ScoringService:
             score_version=self.score_version,
         )
 
-    def score_candidate(
+    async def score_candidate(
         self,
         content_text: str,
         engagement_summary: dict | None = None,
         top_comments: list[MoltbookComment] | None = None,
     ) -> ScoreResult:
-        ollama_vector = self._score_with_ollama(content_text, engagement_summary or {}, top_comments or [])
+        ollama_vector = await self._score_with_ollama(content_text, engagement_summary or {}, top_comments or [])
         if ollama_vector is not None:
             return self.compute_scores(ollama_vector)
 
@@ -121,7 +122,7 @@ class ScoringService:
             risk=risk,
         )
 
-    def _score_with_ollama(
+    async def _score_with_ollama(
         self,
         content_text: str,
         engagement_summary: dict[str, Any],
@@ -135,8 +136,15 @@ class ScoringService:
         comments_section = self._format_top_comments(top_comments)
 
         prompt = (
-            "Return only compact JSON with keys novelty, depth, tension, reflective_impact, engagement, risk. "
-            "Scores must be numeric in range: novelty/depth/tension/reflective_impact/engagement 0..5, risk 0..5.\n"
+            "Analyze this Moltbook post and comments to score its quality and virality potential.\n"
+            "Return ONLY a compact JSON object with exactly these numeric keys (0.0 to 5.0 scale, decimals allowed, except risk 0..5 integer).\n"
+            "Strict Evaluation Rubric:\n"
+            "- novelty (0-5): How unique, counter-intuitive, or fresh is the angle? (5 = paradigm-shifting, 1 = generic repost).\n"
+            "- depth (0-5): Does it provide actionable insights, deep technical analysis, or high-signal information? (5 = masterclass level, 1 = superficial fluff).\n"
+            "- tension (0-5): Does the topic naturally spark debate, strong opinions, or curiosity? (5 = highly debatable/polarizing, 1 = boring consensus).\n"
+            "- reflective_impact (0-5): Does it change how the reader thinks or works? (5 = profound impact, 1 = forgotten immediately).\n"
+            "- engagement (0-5): Based on the likes, comment count, and comment quality, how well is it performing? (5 = viral, 1 = ignored).\n"
+            "- risk (0..5 integer): Is there NSFW, spam, hate speech, or extreme toxicity? (0 = completely safe, 5 = highly unsafe).\n"
             "Do not include markdown fences or additional explanation.\n"
             f"Likes={likes}, comments={comments}\n"
             f"Content:\n{content_text}\n\n"
@@ -163,7 +171,7 @@ class ScoringService:
         }
 
         try:
-            payload = self._chat_with_think_fallback(
+            payload = await self._chat_with_think_fallback(
                 prompt=prompt,
                 think=True,
                 response_format=response_format,
@@ -181,7 +189,7 @@ class ScoringService:
                     f"Content:\n{content_text}\n\n"
                     f"{comments_section}"
                 )
-                retry_payload = self._chat_with_think_fallback(
+                retry_payload = await self._chat_with_think_fallback(
                     prompt=retry_prompt,
                     think=True,
                     response_format="json",
@@ -203,7 +211,7 @@ class ScoringService:
                 self._ollama_enabled = False
             return None
 
-    def _chat_with_think_fallback(
+    async def _chat_with_think_fallback(
         self,
         *,
         prompt: str,
@@ -219,7 +227,7 @@ class ScoringService:
         if response_format is not None:
             request_payload["format"] = response_format
 
-        response = self._ollama_client.post(self._ollama_chat_url, json=request_payload)
+        response = await asyncio.to_thread(lambda: self._ollama_client.post(self._ollama_chat_url, json=request_payload))
         if response.status_code < 400:
             return response.json()
 
@@ -232,7 +240,9 @@ class ScoringService:
         else:
             compat_payload.pop("think", None)
 
-        compat_response = self._ollama_client.post(self._ollama_chat_url, json=compat_payload)
+        compat_response = await asyncio.to_thread(
+            lambda: self._ollama_client.post(self._ollama_chat_url, json=compat_payload)
+        )
         compat_response.raise_for_status()
         return compat_response.json()
 

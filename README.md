@@ -8,6 +8,7 @@ Current pipeline:
 - Deduplicate and score with Ollama
 - Build a review queue
 - Let operators approve/reject before publishing
+- Ingestion and review run in separate DB transactions (review failure does not roll back ingested candidates)
 
 ## Quick Start
 

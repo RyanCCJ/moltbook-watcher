@@ -39,6 +39,33 @@ async def _ensure_review_item_columns() -> None:
             await connection.execute(text(statement))
 
 
+async def _ensure_candidate_post_columns() -> None:
+    engine = get_engine()
+    async with engine.begin() as connection:
+        def _read_columns(sync_connection) -> set[str]:
+            table_names = inspect(sync_connection).get_table_names()
+            if "candidate_posts" not in table_names:
+                return set()
+            return {column["name"] for column in inspect(sync_connection).get_columns("candidate_posts")}
+
+        existing_columns = await connection.run_sync(_read_columns)
+        if "top_comments_snapshot" in existing_columns:
+            return
+
+        await connection.execute(
+            text("ALTER TABLE candidate_posts ADD COLUMN top_comments_snapshot JSON NOT NULL DEFAULT '[]'")
+        )
+        await connection.execute(
+            text(
+                """
+                UPDATE candidate_posts
+                SET top_comments_snapshot = '[]'
+                WHERE top_comments_snapshot IS NULL
+                """
+            )
+        )
+
+
 async def _normalize_legacy_moltbook_urls() -> None:
     engine = get_engine()
     async with engine.begin() as connection:
@@ -78,6 +105,7 @@ async def _normalize_legacy_moltbook_urls() -> None:
 async def main() -> None:
     await create_schema()
     await _ensure_review_item_columns()
+    await _ensure_candidate_post_columns()
     await _normalize_legacy_moltbook_urls()
 
 

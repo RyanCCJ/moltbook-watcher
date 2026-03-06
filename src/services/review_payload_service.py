@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import re
 from dataclasses import dataclass
 from difflib import SequenceMatcher
@@ -48,7 +50,7 @@ class ReviewPayloadService:
         self._threads_language = threads_language.strip() or "en"
         self._threads_draft_min_score = threads_draft_min_score
 
-    def build_payload(
+    async def build_payload(
         self,
         *,
         raw_content: str,
@@ -71,8 +73,8 @@ class ReviewPayloadService:
         comments_snapshot = self._serialize_comments(normalized_comments)
 
         if self._translation_language:
-            translated_content = self._translate(raw_content, self._translation_language)
-            translated_comments = self._translate_comments(
+            translated_content, translated_comments = await self._translate_batch(
+                raw_content,
                 normalized_comments,
                 target_language=self._translation_language,
             )
@@ -86,7 +88,7 @@ class ReviewPayloadService:
             and final_score >= self._threads_draft_min_score
             and source_url.strip()
         ):
-            threads_draft = self._generate_threads_draft(
+            threads_draft = await self._generate_threads_draft(
                 raw_content=raw_content,
                 top_comments=normalized_comments,
                 final_score=final_score,
@@ -107,28 +109,28 @@ class ReviewPayloadService:
         if self._owns_client:
             self._ollama_client.close()
 
-    def _translate(self, content: str, target_language: str) -> str:
+    async def _translate(self, content: str, target_language: str) -> str:
         if not content.strip():
             return ""
         if not self._ollama_enabled:
             return ""
 
         prompt = (
-            "You are a professional translator.\n"
+            "You are a professional, highly accurate translation engine.\n"
             f"Target language: {self._describe_language(target_language)} ({target_language}).\n"
             "Task:\n"
-            "- Translate the full input into the target language naturally and faithfully.\n"
+            f"- Translate the full input into {target_language} naturally and fluently.\n"
             "Rules:\n"
-            "- Translate all sentences; do not leave full sentences in the source language.\n"
+            "- CRITICAL: Do NOT copy or output the text in its original language. You MUST translate every sentence.\n"
             "- Preserve all meaning and paragraph structure.\n"
             "- Preserve Markdown elements (headings, lists, tables, links, code blocks).\n"
             "- Keep URLs, handles, product names, and code tokens unchanged.\n"
             "- Return only translated text, no explanations, no notes.\n"
             f"Input:\n{content}\n"
-            "Final reminder: The output MUST be entirely in the TARGET LANGUAGE.\n"
+            f"Final reminder: The output MUST be entirely in {target_language}.\n"
         )
         try:
-            payload = self._chat_with_think_fallback(prompt=prompt, think=False)
+            payload = await self._chat_with_think_fallback(prompt=prompt, think=False)
             return self._extract_chat_content(payload)
         except Exception as error:  # pragma: no cover - fallback path
             logger.warning(
@@ -140,7 +142,7 @@ class ReviewPayloadService:
                 self._ollama_enabled = False
             return ""
 
-    def _generate_threads_draft(
+    async def _generate_threads_draft(
         self,
         raw_content: str,
         top_comments: list[MoltbookComment],
@@ -156,29 +158,28 @@ class ReviewPayloadService:
             "You are sharing a Moltbook post on Threads to attract clicks, likes, and discussion.\n"
             f"Write in {self._describe_language(self._threads_language)}.\n"
             "Goal:\n"
-            "- Make people want to open the original Moltbook post.\n"
-            "- Use a concise sharing/commentary angle, not a dry summary.\n"
+            "- Spark curiosity and drive traffic to the original Moltbook post.\n"
+            "- Deliver immediate value (a sharp insight or key takeaway), then leave them wanting the full context.\n"
             "Rules:\n"
-            "- Use a natural conversational tone.\n"
-            "- No bullet points or numbered lists.\n"
-            "- No markdown syntax (headings, bold, links, code fences).\n"
+            "- Use a natural, authentic conversational tone (like talking to a smart peer).\n"
+            "- MUST start with the hook wrapped in solid brackets like 【 Your Intriguing Hook 】. This hook MUST be strictly one, short sentence.\n"
+            "- No bullet points, numbered lists, or Markdown syntax.\n"
             "- Do not include any URLs.\n"
-            "- Avoid excessive emoji (max 2).\n"
-            "- Do not invent facts beyond the source content/comments.\n"
+            "- Use emojis sparingly (max 1 or 2 total).\n"
+            "- STRICTLY NO forced, generic reflections (e.g., 'This makes us ponder the future'). Keep it grounded and substantive.\n"
             "Length:\n"
-            "- 3 to 5 short paragraphs.\n"
+            "- Concise but substantive: 3 to 4 short paragraphs. Provide enough depth to deliver real value while respecting attention spans.\n"
             "Content strategy:\n"
-            "- Start with a sharp hook in the first sentence.\n"
-            "- If topic is thought-provoking/controversial, briefly comment on why it is interesting and potential human impact.\n"
-            "- If article is high-signal/information-dense, make the key takeaway obvious in one sentence.\n"
-            "- End with a simple call-to-action question to invite replies/likes.\n"
+            "- Paragraph 1: The Hook. Make it curious or relatable. Do not use cheap, sensationalist clickbait.\n"
+            "- Paragraph 2 & 3: The Meat (Core Insights). Digest the most valuable signals, arguments, or data from the post and comments. Summarize the 'why' and the 'how' so the reader learns something useful immediately.\n"
+            "- Paragraph 4: The Kicker. End with a specific, provocative question to spark debate, or a brief cliffhanger indicating the full post has deeper context.\n"
             f"Post content:\n{raw_content}\n\n"
             f"{comments_section}\n\n"
             "Return only the final post text."
         )
 
         try:
-            payload = self._chat_with_think_fallback(prompt=prompt, think=True)
+            payload = await self._chat_with_think_fallback(prompt=prompt, think=True)
             generated = self._extract_chat_content(payload)
             generated = self._strip_urls(generated).strip()
             if not generated:
@@ -193,7 +194,7 @@ class ReviewPayloadService:
                 self._ollama_enabled = False
             return ""
 
-    def _translate_comments(
+    async def _translate_comments(
         self,
         comments: list[MoltbookComment],
         *,
@@ -204,11 +205,100 @@ class ReviewPayloadService:
             translated.append(
                 {
                     "author_handle": comment.author_handle,
-                    "content_text": self._translate(comment.content_text, target_language),
+                    "content_text": await self._translate(comment.content_text, target_language),
                     "upvotes": comment.upvotes,
                 }
             )
         return translated
+
+    async def _translate_batch(
+        self,
+        content: str,
+        comments: list[MoltbookComment],
+        *,
+        target_language: str,
+    ) -> tuple[str, list[dict[str, Any]]]:
+        if not self._ollama_enabled:
+            return "", await self._translate_comments(comments, target_language=target_language)
+
+        input_payload: dict[str, str] = {}
+        if content.strip():
+            input_payload["content"] = content
+
+        comment_keys: list[str | None] = []
+        for index, comment in enumerate(comments, start=1):
+            if comment.content_text.strip():
+                key = f"comment_{index}"
+                input_payload[key] = comment.content_text
+                comment_keys.append(key)
+            else:
+                comment_keys.append(None)
+
+        if not input_payload:
+            translated_comments = [
+                {
+                    "author_handle": comment.author_handle,
+                    "content_text": "",
+                    "upvotes": comment.upvotes,
+                }
+                for comment in comments
+            ]
+            return "", translated_comments
+
+        response_format = {
+            "type": "object",
+            "properties": {key: {"type": "string"} for key in input_payload},
+            "required": list(input_payload.keys()),
+        }
+
+        prompt = (
+            "You are a professional, highly accurate translation engine.\n"
+            f"Target language: {self._describe_language(target_language)} ({target_language}).\n"
+            f"Task: Translate every string value in the provided JSON object into {target_language}.\n"
+            "Rules:\n"
+            "- CRITICAL: Do NOT copy the original text. You MUST translate every single value into the target language.\n"
+            "- Keep the JSON structure and keys exactly unchanged.\n"
+            "- Preserve original meaning, style, and any Markdown elements within the text.\n"
+            "- Keep URLs, handles, product names, and code tokens unchanged.\n"
+            "- Return only valid JSON with the exact same keys.\n"
+            f"Input JSON:\n{json.dumps(input_payload, ensure_ascii=False)}"
+        )
+
+        try:
+            payload = await self._chat_with_think_fallback(
+                prompt=prompt,
+                think=False,
+                response_format=response_format,
+            )
+            raw_response = self._extract_chat_content(payload)
+            parsed = self._parse_json_object(raw_response)
+            missing_keys = [key for key in input_payload if key not in parsed]
+            if missing_keys:
+                raise ValueError(f"missing_keys: {','.join(missing_keys)}")
+
+            translated_content = str(parsed.get("content", "")).strip()
+            translated_comments: list[dict[str, Any]] = []
+            for index, comment in enumerate(comments):
+                key = comment_keys[index]
+                translated_text = str(parsed[key]).strip() if key else ""
+                translated_comments.append(
+                    {
+                        "author_handle": comment.author_handle,
+                        "content_text": translated_text,
+                        "upvotes": comment.upvotes,
+                    }
+                )
+            return translated_content, translated_comments
+        except ValueError as error:
+            logger.warning("ollama_batch_translation_parse_failed", reason=str(error))
+        except Exception as error:  # pragma: no cover - network failure path
+            logger.warning("ollama_batch_translation_failed", reason=str(error))
+            if isinstance(error, httpx.HTTPError):
+                self._ollama_enabled = False
+
+        translated_content = await self._translate(content, target_language)
+        translated_comments = await self._translate_comments(comments, target_language=target_language)
+        return translated_content, translated_comments
 
     @staticmethod
     def _serialize_comments(comments: list[MoltbookComment]) -> list[dict[str, Any]]:
@@ -258,15 +348,23 @@ class ReviewPayloadService:
         similarity = SequenceMatcher(None, normalized_generated, normalized_source).ratio()
         return similarity >= threshold
 
-    def _chat_with_think_fallback(self, *, prompt: str, think: bool) -> dict[str, Any]:
+    async def _chat_with_think_fallback(
+        self,
+        *,
+        prompt: str,
+        think: bool,
+        response_format: Any | None = None,
+    ) -> dict[str, Any]:
         request_payload: dict[str, Any] = {
             "model": self._ollama_model,
             "messages": [{"role": "user", "content": prompt}],
             "stream": False,
             "think": think,
         }
+        if response_format is not None:
+            request_payload["format"] = response_format
 
-        response = self._ollama_client.post(self._ollama_chat_url, json=request_payload)
+        response = await asyncio.to_thread(lambda: self._ollama_client.post(self._ollama_chat_url, json=request_payload))
         if response.status_code < 400:
             return response.json()
 
@@ -279,9 +377,27 @@ class ReviewPayloadService:
         else:
             compat_payload.pop("think", None)
 
-        compat_response = self._ollama_client.post(self._ollama_chat_url, json=compat_payload)
+        compat_response = await asyncio.to_thread(
+            lambda: self._ollama_client.post(self._ollama_chat_url, json=compat_payload)
+        )
         compat_response.raise_for_status()
         return compat_response.json()
+
+    @staticmethod
+    def _parse_json_object(raw_response: str) -> dict[str, Any]:
+        stripped = raw_response.strip()
+        if stripped:
+            try:
+                parsed = json.loads(stripped)
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError:
+                match = re.search(r"\{.*\}", stripped, flags=re.DOTALL)
+                if match is not None:
+                    parsed = json.loads(match.group(0))
+                    if isinstance(parsed, dict):
+                        return parsed
+        raise ValueError("invalid_ollama_json")
 
     @staticmethod
     def _extract_chat_content(payload: dict[str, Any]) -> str:

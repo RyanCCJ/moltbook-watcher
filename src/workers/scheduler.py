@@ -7,7 +7,12 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from src.config.settings import get_settings
 from src.services.logging_service import configure_logging, get_logger
-from src.workers.runtime import run_ingestion_once, run_publish_once
+from src.workers.runtime import (
+    IngestionCycleError,
+    ReviewCycleError,
+    run_ingestion_once,
+    run_publish_once,
+)
 
 logger = get_logger(__name__)
 
@@ -16,8 +21,14 @@ async def run_ingestion_cycle() -> None:
     logger.info("ingestion_cycle_triggered", ts=datetime.now(tz=UTC).isoformat())
     try:
         metrics = await run_ingestion_once(window="past_hour")
+    except IngestionCycleError as error:
+        logger.error("ingestion_phase_failed", ts=datetime.now(tz=UTC).isoformat(), error=str(error))
+        return
+    except ReviewCycleError as error:
+        logger.error("review_phase_failed", ts=datetime.now(tz=UTC).isoformat(), error=str(error))
+        return
     except Exception as error:
-        logger.exception("ingestion_cycle_failed", ts=datetime.now(tz=UTC).isoformat(), error=str(error))
+        logger.error("ingestion_cycle_failed", ts=datetime.now(tz=UTC).isoformat(), error=str(error))
         return
     logger.info("ingestion_cycle_finished", ts=datetime.now(tz=UTC).isoformat(), **metrics)
 
@@ -27,7 +38,7 @@ async def run_publish_cycle() -> None:
     try:
         metrics = await run_publish_once()
     except Exception as error:
-        logger.exception("publish_cycle_failed", ts=datetime.now(tz=UTC).isoformat(), error=str(error))
+        logger.error("publish_cycle_failed", ts=datetime.now(tz=UTC).isoformat(), error=str(error))
         return
     logger.info("publish_cycle_finished", ts=datetime.now(tz=UTC).isoformat(), **metrics)
 

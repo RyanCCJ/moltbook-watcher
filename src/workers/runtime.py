@@ -13,6 +13,14 @@ from src.workers.publish_worker import PublishWorker
 from src.workers.review_worker import ReviewWorker
 
 
+class IngestionCycleError(RuntimeError):
+    pass
+
+
+class ReviewCycleError(RuntimeError):
+    pass
+
+
 async def run_ingestion_once(window: str = "past_hour", limit: int = 100, sort: str = "top") -> dict[str, int]:
     settings = get_settings()
     moltbook_client = MoltbookAPIClient(
@@ -30,17 +38,24 @@ async def run_ingestion_once(window: str = "past_hour", limit: int = 100, sort: 
         translation_language=settings.translation_language,
         threads_language=settings.threads_language,
     )
-    review_worker = ReviewWorker(payload_service=review_payload_service, moltbook_client=moltbook_client)
+    review_worker = ReviewWorker(payload_service=review_payload_service)
 
     try:
         async with AsyncSessionLocal() as session:
             try:
                 ingestion_metrics = await ingestion_worker.run_cycle(session, window=window, limit=limit, sort=sort)
+                await session.commit()
+            except Exception as error:
+                await session.rollback()
+                raise IngestionCycleError(str(error)) from error
+
+        async with AsyncSessionLocal() as session:
+            try:
                 review_metrics = await review_worker.run_cycle(session)
                 await session.commit()
-            except Exception:
+            except Exception as error:
                 await session.rollback()
-                raise
+                raise ReviewCycleError(str(error)) from error
         return {
             "fetched_count": ingestion_metrics.fetched_count,
             "persisted_count": ingestion_metrics.persisted_count,

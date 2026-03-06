@@ -31,7 +31,7 @@ class ThroughputClient:
 
 
 class ThroughputScorer:
-    def score_candidate(self, content_text: str, engagement_summary=None, top_comments=None):
+    async def score_candidate(self, content_text: str, engagement_summary=None, top_comments=None):
         _ = (content_text, engagement_summary, top_comments)
         return ScoreResult(
             novelty=3.0,

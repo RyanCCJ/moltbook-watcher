@@ -1,6 +1,7 @@
 import json
 
 import httpx
+import pytest
 
 from src.integrations.moltbook_api_client import MoltbookComment
 from src.services.scoring_service import ScoreVector, ScoringService
@@ -49,7 +50,8 @@ def test_final_score_is_clamped_between_zero_and_five() -> None:
     assert result.final_score == 0.0
 
 
-def test_score_candidate_prefers_ollama_when_available() -> None:
+@pytest.mark.asyncio
+async def test_score_candidate_prefers_ollama_when_available() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path.endswith("/api/chat")
         payload = json.loads(request.content.decode("utf-8"))
@@ -67,7 +69,7 @@ def test_score_candidate_prefers_ollama_when_available() -> None:
     client = httpx.Client(transport=httpx.MockTransport(handler))
     service = ScoringService(ollama_client=client)
 
-    result = service.score_candidate("test content", {"likes": 1})
+    result = await service.score_candidate("test content", {"likes": 1})
 
     assert result.novelty == 4.5
     assert result.depth == 4.0
@@ -79,7 +81,8 @@ def test_score_candidate_prefers_ollama_when_available() -> None:
     assert result.final_score == 3.8
 
 
-def test_score_candidate_retries_with_think_false_when_think_is_rejected() -> None:
+@pytest.mark.asyncio
+async def test_score_candidate_retries_with_think_false_when_think_is_rejected() -> None:
     call_count = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -106,14 +109,15 @@ def test_score_candidate_retries_with_think_false_when_think_is_rejected() -> No
     client = httpx.Client(transport=httpx.MockTransport(handler))
     service = ScoringService(ollama_client=client)
 
-    result = service.score_candidate("fallback content", {"likes": 2})
+    result = await service.score_candidate("fallback content", {"likes": 2})
 
     assert call_count == 2
     assert result.novelty == 4.2
     assert result.final_score == 3.68
 
 
-def test_score_candidate_retries_with_json_mode_when_first_response_is_not_json() -> None:
+@pytest.mark.asyncio
+async def test_score_candidate_retries_with_json_mode_when_first_response_is_not_json() -> None:
     call_count = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -141,14 +145,15 @@ def test_score_candidate_retries_with_json_mode_when_first_response_is_not_json(
     client = httpx.Client(transport=httpx.MockTransport(handler))
     service = ScoringService(ollama_client=client)
 
-    result = service.score_candidate("retry content", {"likes": 3})
+    result = await service.score_candidate("retry content", {"likes": 3})
 
     assert call_count == 2
     assert result.novelty == 4.0
     assert result.final_score == 3.4
 
 
-def test_score_candidate_does_not_disable_ollama_after_invalid_json() -> None:
+@pytest.mark.asyncio
+async def test_score_candidate_does_not_disable_ollama_after_invalid_json() -> None:
     call_count = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -170,15 +175,16 @@ def test_score_candidate_does_not_disable_ollama_after_invalid_json() -> None:
     client = httpx.Client(transport=httpx.MockTransport(handler))
     service = ScoringService(ollama_client=client)
 
-    first = service.score_candidate("first try", {"likes": 1})
-    second = service.score_candidate("second try", {"likes": 1})
+    first = await service.score_candidate("first try", {"likes": 1})
+    second = await service.score_candidate("second try", {"likes": 1})
 
     assert call_count == 3
     assert first.score_version == "v1"
     assert second.novelty == 4.1
 
 
-def test_score_candidate_falls_back_to_heuristic_and_disables_after_ollama_error() -> None:
+@pytest.mark.asyncio
+async def test_score_candidate_falls_back_to_heuristic_and_disables_after_ollama_error() -> None:
     call_count = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -189,8 +195,8 @@ def test_score_candidate_falls_back_to_heuristic_and_disables_after_ollama_error
     client = httpx.Client(transport=httpx.MockTransport(handler))
     service = ScoringService(ollama_client=client)
 
-    first = service.score_candidate("safe test content", {"likes": 1})
-    second = service.score_candidate("safe test content", {"likes": 1})
+    first = await service.score_candidate("safe test content", {"likes": 1})
+    second = await service.score_candidate("safe test content", {"likes": 1})
 
     assert call_count == 1
     assert first.score_version == "v1"
@@ -199,7 +205,8 @@ def test_score_candidate_falls_back_to_heuristic_and_disables_after_ollama_error
     assert second.risk == 1
 
 
-def test_score_candidate_includes_top_comments_in_prompt() -> None:
+@pytest.mark.asyncio
+async def test_score_candidate_includes_top_comments_in_prompt() -> None:
     captured_prompt = ""
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -219,7 +226,7 @@ def test_score_candidate_includes_top_comments_in_prompt() -> None:
     client = httpx.Client(transport=httpx.MockTransport(handler))
     service = ScoringService(ollama_client=client)
 
-    service.score_candidate(
+    await service.score_candidate(
         "Prompt with comments",
         {"likes": 2, "comments": 1},
         top_comments=[MoltbookComment(author_handle="alice", content_text="Great insight", upvotes=12)],
@@ -229,7 +236,8 @@ def test_score_candidate_includes_top_comments_in_prompt() -> None:
     assert "@alice: Great insight" in captured_prompt
 
 
-def test_score_candidate_prompt_marks_no_comments_when_absent() -> None:
+@pytest.mark.asyncio
+async def test_score_candidate_prompt_marks_no_comments_when_absent() -> None:
     captured_prompt = ""
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -249,7 +257,7 @@ def test_score_candidate_prompt_marks_no_comments_when_absent() -> None:
     client = httpx.Client(transport=httpx.MockTransport(handler))
     service = ScoringService(ollama_client=client)
 
-    service.score_candidate("Prompt without comments", {"likes": 1}, top_comments=[])
+    await service.score_candidate("Prompt without comments", {"likes": 1}, top_comments=[])
 
     assert "Top comments:" in captured_prompt
     assert "(none)" in captured_prompt

@@ -13,6 +13,9 @@ from src.workers.review_worker import ReviewWorker
 
 
 class ReviewBuildMoltbookClient:
+    def __init__(self) -> None:
+        self.fetch_comments_calls = 0
+
     async def list_posts(self, window: str, cursor: str | None = None, limit: int = 100, sort: str = "top"):
         _ = (window, cursor, limit, sort)
         return (
@@ -31,11 +34,12 @@ class ReviewBuildMoltbookClient:
 
     async def fetch_comments(self, post_id: str, limit: int = 5, sort: str = "top"):
         _ = (post_id, limit, sort)
+        self.fetch_comments_calls += 1
         return [MoltbookComment(author_handle="reviewer", content_text="Helpful context", upvotes=3)]
 
 
 class ReviewBuildScorer:
-    def score_candidate(self, content_text: str, engagement_summary=None, top_comments=None):
+    async def score_candidate(self, content_text: str, engagement_summary=None, top_comments=None):
         _ = (content_text, engagement_summary, top_comments)
         return ScoreResult(
             novelty=4.0,
@@ -61,7 +65,7 @@ async def test_review_worker_builds_pending_review_items_from_queued_candidates(
     ingestion_worker = IngestionWorker(moltbook_client=moltbook_client, scoring_service=ReviewBuildScorer())
     from src.services.review_payload_service import ReviewPayloadService
 
-    review_worker = ReviewWorker(payload_service=ReviewPayloadService(use_ollama=False), moltbook_client=moltbook_client)
+    review_worker = ReviewWorker(payload_service=ReviewPayloadService(use_ollama=False))
 
     async with async_session() as session:
         await ingestion_worker.run_cycle(session, window="today")
@@ -78,3 +82,4 @@ async def test_review_worker_builds_pending_review_items_from_queued_candidates(
     assert review_item is not None
     assert review_item.top_comments_snapshot[0]["content_text"] == "Helpful context"
     assert review_item.top_comments_translated == []
+    assert moltbook_client.fetch_comments_calls == 1

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.integrations.moltbook_api_client import MoltbookAPIClient
+from src.integrations.moltbook_api_client import MoltbookComment
 from src.models.candidate_post import CandidatePost
 from src.models.review_item import ReviewItem, ReviewItemRepository
 from src.models.score_card import ScoreCard
@@ -22,12 +23,9 @@ class ReviewWorker:
     def __init__(
         self,
         payload_service: ReviewPayloadService | None = None,
-        *,
-        moltbook_client: MoltbookAPIClient | None = None,
     ) -> None:
         self._payload_service = payload_service or ReviewPayloadService()
         self._review_repo = ReviewItemRepository()
-        self._moltbook_client = moltbook_client
 
     async def run_cycle(self, session: AsyncSession) -> ReviewBuildMetrics:
         statement = (
@@ -47,11 +45,9 @@ class ReviewWorker:
                 skipped_count += 1
                 continue
 
-            top_comments = []
-            if self._moltbook_client and candidate.source_post_id:
-                top_comments = await self._moltbook_client.fetch_comments(candidate.source_post_id, limit=5, sort="top")
+            top_comments = self._deserialize_comments(candidate.top_comments_snapshot)
 
-            payload = self._payload_service.build_payload(
+            payload = await self._payload_service.build_payload(
                 raw_content=candidate.raw_content,
                 risk_score=score.risk_score,
                 is_follow_up=candidate.is_follow_up_candidate,
@@ -73,3 +69,26 @@ class ReviewWorker:
             created_count += 1
 
         return ReviewBuildMetrics(created_count=created_count, skipped_count=skipped_count)
+
+    @staticmethod
+    def _deserialize_comments(snapshot: list[dict[str, Any]] | None) -> list[MoltbookComment]:
+        comments: list[MoltbookComment] = []
+        for item in snapshot or []:
+            if not isinstance(item, dict):
+                continue
+            content_text = str(item.get("content_text", "")).strip()
+            if not content_text:
+                continue
+            upvotes_value = item.get("upvotes", 0)
+            try:
+                upvotes = int(upvotes_value)
+            except (TypeError, ValueError):
+                upvotes = 0
+            comments.append(
+                MoltbookComment(
+                    author_handle=item.get("author_handle"),
+                    content_text=content_text,
+                    upvotes=max(0, upvotes),
+                )
+            )
+        return comments

@@ -37,9 +37,17 @@ class FakeMoltbookClient:
                     source_url="https://moltbook.com/p/3",
                     source_post_id="3",
                     author_handle="carol",
-                    content_text="Publishing retries should trigger alerts",
+                    content_text="Shipping review queues should preserve cached comments",
                     created_at=datetime.now(tz=UTC),
                     engagement_summary={"likes": 7},
+                ),
+                MoltbookPost(
+                    source_url="https://moltbook.com/p/4",
+                    source_post_id=None,
+                    author_handle="dora",
+                    content_text="Missing source id should skip comments fetch",
+                    created_at=datetime.now(tz=UTC),
+                    engagement_summary={"likes": 4},
                 ),
             ],
             None,
@@ -47,11 +55,13 @@ class FakeMoltbookClient:
 
     async def fetch_comments(self, post_id: str, limit: int = 5, sort: str = "top"):
         _ = (limit, sort)
+        if post_id == "3":
+            return []
         return [MoltbookComment(author_handle="commenter", content_text=f"Comment for {post_id}", upvotes=2)]
 
 
 class FakeScoringService:
-    def score_candidate(
+    async def score_candidate(
         self,
         content_text: str,
         engagement_summary: dict | None = None,
@@ -88,9 +98,16 @@ async def test_ingestion_cycle_filters_duplicates_and_persists_scores() -> None:
         candidates = (await session.scalars(select(CandidatePost))).all()
         scores = (await session.scalars(select(ScoreCard))).all()
 
-    assert metrics.fetched_count == 3
-    assert metrics.persisted_count == 2
+    assert metrics.fetched_count == 4
+    assert metrics.persisted_count == 3
     assert metrics.filtered_duplicate_count == 1
-    assert len(candidates) == 2
-    assert len(scores) == 2
+    assert len(candidates) == 3
+    assert len(scores) == 3
     assert all(candidate.status == "queued" for candidate in candidates)
+
+    by_source_post_id = {candidate.source_post_id: candidate for candidate in candidates}
+    assert by_source_post_id["1"].top_comments_snapshot == [
+        {"author_handle": "commenter", "content_text": "Comment for 1", "upvotes": 2}
+    ]
+    assert by_source_post_id["3"].top_comments_snapshot == []
+    assert by_source_post_id[None].top_comments_snapshot == []

@@ -67,6 +67,14 @@ class IngestionWorker:
                 post.top_comments = await self._moltbook_client.fetch_comments(post.source_post_id, limit=5, sort="top")
 
             fingerprint = self._dedup_service.build_fingerprint(post.content_text)
+            comment_snapshot = [
+                {
+                    "author_handle": comment.author_handle,
+                    "content_text": comment.content_text,
+                    "upvotes": comment.upvotes,
+                }
+                for comment in post.top_comments
+            ]
 
             candidate = await self._candidate_repo.create(
                 session,
@@ -77,9 +85,10 @@ class IngestionWorker:
                 raw_content=post.content_text,
                 captured_at=post.created_at,
                 dedup_fingerprint=fingerprint,
+                top_comments_snapshot=comment_snapshot,
             )
 
-            score = self._scoring_service.score_candidate(
+            score = await self._scoring_service.score_candidate(
                 post.content_text,
                 post.engagement_summary,
                 post.top_comments,

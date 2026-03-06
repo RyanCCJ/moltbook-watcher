@@ -62,7 +62,7 @@ async def test_candidate_to_publish_e2e_smoke() -> None:
         await connection.run_sync(Base.metadata.create_all)
 
     class _Scorer:
-        def score_candidate(self, content_text: str, engagement_summary=None, top_comments=None):
+        async def score_candidate(self, content_text: str, engagement_summary=None, top_comments=None):
             _ = (content_text, engagement_summary, top_comments)
             from src.services.scoring_service import ScoreResult
 
@@ -92,7 +92,7 @@ async def test_candidate_to_publish_e2e_smoke() -> None:
         assert candidate_obj is not None
 
         comments = await moltbook_client.fetch_comments(candidate_obj.source_post_id or "")
-        payload = payload_builder.build_payload(
+        payload = await payload_builder.build_payload(
             raw_content=candidate_obj.raw_content,
             risk_score=1,
             top_comments=comments,
