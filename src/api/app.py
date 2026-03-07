@@ -8,10 +8,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.ops_routes import router as ops_router
 from src.api.publish_routes import router as publish_router
 from src.api.review_routes import router as review_router
+from src.api.telegram_routes import (
+    build_telegram_webhook_secret,
+)
+from src.api.telegram_routes import (
+    router as telegram_router,
+)
 from src.config.settings import get_settings
+from src.integrations.telegram_client import TelegramClient
 from src.models.base import check_db_health, get_session
-from src.services.logging_service import configure_logging
+from src.services.logging_service import configure_logging, get_logger
 from src.services.queue_client import QueueClient
+from src.services.telegram_service import TelegramService
+
+logger = get_logger(__name__)
 
 
 def create_app() -> FastAPI:
@@ -25,11 +35,27 @@ def create_app() -> FastAPI:
         app.state.settings = settings
         app.state.queue_client = QueueClient(settings.redis_url)
         await app.state.queue_client.connect()
+        app.state.telegram_webhook_registered = False
+        if settings.telegram_enabled:
+            telegram_client = TelegramClient(settings.telegram_bot_token)
+            app.state.telegram_client = telegram_client
+            app.state.telegram_service = TelegramService(telegram_client, settings.telegram_chat_id)
+            if settings.telegram_webhook_url.strip():
+                await telegram_client.set_webhook(
+                    settings.telegram_webhook_url,
+                    build_telegram_webhook_secret(settings.telegram_bot_token),
+                )
+                app.state.telegram_webhook_registered = True
+            else:
+                logger.warning("telegram_webhook_registration_skipped", reason="missing_webhook_url")
 
     @app.on_event("shutdown")
     async def shutdown() -> None:
         queue_client: QueueClient = app.state.queue_client
         await queue_client.close()
+        telegram_client: TelegramClient | None = getattr(app.state, "telegram_client", None)
+        if telegram_client is not None:
+            await telegram_client.close()
 
     @app.get("/health")
     async def health(session: AsyncSession = Depends(get_session)) -> dict[str, object]:
@@ -64,6 +90,8 @@ def create_app() -> FastAPI:
     app.include_router(review_router)
     app.include_router(publish_router)
     app.include_router(ops_router)
+    if settings.telegram_enabled:
+        app.include_router(telegram_router)
 
     return app
 

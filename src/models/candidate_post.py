@@ -16,7 +16,7 @@ class CandidatePost(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     source_url: Mapped[str] = mapped_column(String(2048), nullable=False, unique=True)
-    source_window: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_time: Mapped[str] = mapped_column(String(32), nullable=False)
     source_post_id: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
     author_handle: Mapped[str | None] = mapped_column(String(255), nullable=True)
     raw_content: Mapped[str] = mapped_column(Text, nullable=False)
@@ -38,7 +38,7 @@ class CandidatePostRepository:
         session: AsyncSession,
         *,
         source_url: str,
-        source_window: str,
+        source_time: str,
         source_post_id: str | None,
         author_handle: str | None,
         raw_content: str,
@@ -48,7 +48,7 @@ class CandidatePostRepository:
     ) -> CandidatePost:
         candidate = CandidatePost(
             source_url=source_url,
-            source_window=source_window,
+            source_time=source_time,
             source_post_id=source_post_id,
             author_handle=author_handle,
             raw_content=raw_content,

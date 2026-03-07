@@ -122,3 +122,21 @@ class ReviewItemRepository:
         await session.flush()
 
         return review_item
+
+    async def update_draft(
+        self,
+        session: AsyncSession,
+        *,
+        review_item_id: str,
+        threads_draft: str,
+    ) -> ReviewItem:
+        review_item = await self.get(session, review_item_id)
+        if review_item is None:
+            raise ValueError("Review item not found")
+        if review_item.decision != ReviewDecision.PENDING.value:
+            raise ValueError("Decision already submitted")
+
+        review_item.threads_draft = threads_draft
+        session.add(review_item)
+        await session.flush()
+        return review_item

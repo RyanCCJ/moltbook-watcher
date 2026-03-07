@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -12,19 +12,12 @@ async def test_list_posts_returns_required_contract_fields() -> None:
 
     async def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.params["sort"] == "top"
-        assert int(request.url.params["limit"]) <= 25
+        assert request.url.params["time"] == "day"
+        assert int(request.url.params["limit"]) == 10
         return httpx.Response(
             status_code=200,
             json={
                 "items": [
-                    {
-                        "source_url": "https://moltbook.com/p/old",
-                        "source_post_id": "old",
-                        "author_handle": "old-author",
-                        "content_text": "Old Moltbook post",
-                        "created_at": (now - timedelta(days=2)).isoformat().replace("+00:00", "Z"),
-                        "engagement_summary": {"likes": 1},
-                    },
                     {
                         "source_url": "https://moltbook.com/p/1",
                         "source_post_id": "1",
@@ -45,7 +38,7 @@ async def test_list_posts_returns_required_contract_fields() -> None:
         client=httpx.AsyncClient(transport=transport),
     )
 
-    posts, cursor = await client.list_posts(window="today", limit=10)
+    posts, cursor = await client.list_posts(time="day", limit=10)
 
     assert cursor is None
     assert len(posts) == 1
@@ -55,11 +48,11 @@ async def test_list_posts_returns_required_contract_fields() -> None:
 
 
 @pytest.mark.asyncio
-async def test_list_posts_rejects_unsupported_window() -> None:
+async def test_list_posts_rejects_unsupported_time() -> None:
     client = MoltbookAPIClient(base_url="https://api.moltbook.test", token="token")
 
-    with pytest.raises(ValueError, match="Unsupported window"):
-        await client.list_posts(window="unknown")
+    with pytest.raises(ValueError, match="Unsupported time"):
+        await client.list_posts(time="unknown")
 
 
 @pytest.mark.asyncio
@@ -67,7 +60,7 @@ async def test_list_posts_rejects_unsupported_sort() -> None:
     client = MoltbookAPIClient(base_url="https://api.moltbook.test", token="token")
 
     with pytest.raises(ValueError, match="Unsupported sort"):
-        await client.list_posts(window="today", sort="controversial")
+        await client.list_posts(time="day", sort="controversial")
 
 
 @pytest.mark.asyncio
@@ -98,7 +91,7 @@ async def test_list_posts_normalizes_legacy_post_url_fallback_to_canonical_route
         client=httpx.AsyncClient(transport=transport),
     )
 
-    posts, _ = await client.list_posts(window="today", limit=1)
+    posts, _ = await client.list_posts(time="day", limit=1)
 
     assert len(posts) == 1
     assert posts[0].source_url == "https://www.moltbook.com/post/abc123"

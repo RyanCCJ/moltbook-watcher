@@ -21,7 +21,7 @@ This document explains:
 ## 2. Pipeline data flow
 
 1. Ingestion (`/ops/ingestion/run` or scheduler)
-   - fetch posts from Moltbook API (`sort`, `limit`) and apply local `window` time filtering
+   - fetch posts from Moltbook API using upstream `time`, `sort`, and `limit` parameters
    - fetch top comments for each new post (`GET /posts/{id}/comments?sort=top&limit=5`)
    - deduplicate
    - score with Ollama (post + top comments context)
@@ -144,6 +144,6 @@ uv run python scripts/migrate.py
 2. Run one minimal ingestion smoke:
 
 ```bash
-uv run python scripts/ops_cli.py ingest --window past_hour --sort top --limit 1
+uv run python scripts/ops_cli.py ingest --time hour --sort top --limit 1
 uv run python scripts/ops_cli.py review-list --status pending --limit 10
 ```

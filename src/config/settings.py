@@ -26,12 +26,11 @@ class Settings(BaseSettings):
     threads_api_token: str = "local-test-token"
     threads_account_id: str = "local-test-account"
 
-    smtp_host: str = "localhost"
-    smtp_port: int = 25
-    smtp_username: str = ""
-    smtp_password: str = ""
-    smtp_from: str = "bot@example.com"
-    smtp_to: str = "operator@example.com"
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    telegram_webhook_url: str = ""
+    telegram_daily_summary_hour: int = 22
+    telegram_daily_summary_timezone: str = "UTC"
 
     publish_mode: Literal["manual-approval", "low-risk-auto"] = "manual-approval"
     max_publish_per_day: int = 5
@@ -52,12 +51,23 @@ class Settings(BaseSettings):
             raise ValueError("max_publish_per_day must be between 0 and 5")
         return value
 
+    @field_validator("telegram_daily_summary_hour")
+    @classmethod
+    def validate_telegram_daily_summary_hour(cls, value: int) -> int:
+        if value < 0 or value > 23:
+            raise ValueError("telegram_daily_summary_hour must be between 0 and 23")
+        return value
+
     @field_validator("ingestion_interval_minutes", "publish_poll_minutes")
     @classmethod
     def validate_positive_interval(cls, value: int) -> int:
         if value <= 0:
             raise ValueError("intervals must be greater than zero")
         return value
+
+    @property
+    def telegram_enabled(self) -> bool:
+        return bool(self.telegram_bot_token.strip())
 
 
 @lru_cache(maxsize=1)

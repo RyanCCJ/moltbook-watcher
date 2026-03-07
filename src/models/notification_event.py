@@ -17,7 +17,7 @@ class NotificationEvent(Base):
     publish_job_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("publish_jobs.id", ondelete="CASCADE"), nullable=False
     )
-    channel: Mapped[str] = mapped_column(String(32), nullable=False, default="smtp_email")
+    channel: Mapped[str] = mapped_column(String(32), nullable=False, default="telegram")
     recipient: Mapped[str] = mapped_column(String(320), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

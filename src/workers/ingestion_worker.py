@@ -42,12 +42,12 @@ class IngestionWorker:
     async def run_cycle(
         self,
         session: AsyncSession,
-        window: str = "past_hour",
+        time: str = "hour",
         limit: int = 100,
         sort: str = "top",
     ) -> IngestionMetrics:
         started = perf_counter()
-        posts, _ = await self._moltbook_client.list_posts(window=window, limit=limit, sort=sort)
+        posts, _ = await self._moltbook_client.list_posts(time=time, limit=limit, sort=sort)
 
         existing_texts = await self._candidate_repo.list_active_contents(session)
         persisted_count = 0
@@ -79,7 +79,7 @@ class IngestionWorker:
             candidate = await self._candidate_repo.create(
                 session,
                 source_url=post.source_url,
-                source_window=window,
+                source_time=time,
                 source_post_id=post.source_post_id,
                 author_handle=post.author_handle,
                 raw_content=post.content_text,

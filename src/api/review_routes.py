@@ -21,6 +21,10 @@ class ReviewDecisionRequest(BaseModel):
     reviewedBy: str | None = None
 
 
+class ReviewDraftUpdateRequest(BaseModel):
+    threadsDraft: str
+
+
 @router.get("/review-items")
 async def list_review_items(
     status: str | None = Query(default=None),
@@ -103,3 +107,29 @@ async def submit_review_decision(
         "decision": review_item.decision,
         "decidedAt": (review_item.reviewed_at or datetime.now(tz=UTC)).isoformat(),
     }
+
+
+@router.patch("/review-items/{review_item_id}/draft")
+async def update_review_draft(
+    review_item_id: str,
+    payload: ReviewDraftUpdateRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, object]:
+    repository = ReviewItemRepository()
+
+    try:
+        review_item = await repository.update_draft(
+            session,
+            review_item_id=review_item_id,
+            threads_draft=payload.threadsDraft,
+        )
+    except ValueError as error:
+        message = str(error)
+        if message == "Review item not found":
+            raise HTTPException(status_code=404, detail=message) from error
+        if message == "Decision already submitted":
+            raise HTTPException(status_code=409, detail=message) from error
+        raise HTTPException(status_code=400, detail=message) from error
+
+    await session.commit()
+    return {"reviewItemId": review_item.id, "updated": True}

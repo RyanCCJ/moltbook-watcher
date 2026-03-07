@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import asyncio
-import smtplib
 from abc import ABC, abstractmethod
-from email.message import EmailMessage
+from html import escape
+
+from src.integrations.telegram_client import TelegramClient
 
 
 class NotificationClient(ABC):
@@ -12,35 +12,20 @@ class NotificationClient(ABC):
         raise NotImplementedError
 
 
-class SMTPNotificationClient(NotificationClient):
-    def __init__(
-        self,
-        host: str,
-        port: int,
-        username: str,
-        password: str,
-        sender: str,
-        recipient: str,
-    ) -> None:
-        self._host = host
-        self._port = port
-        self._username = username
-        self._password = password
-        self._sender = sender
-        self._recipient = recipient
+class TelegramNotificationClient(NotificationClient):
+    def __init__(self, telegram_client: TelegramClient, chat_id: str) -> None:
+        self._telegram_client = telegram_client
+        self._chat_id = chat_id
 
     async def send_notification(self, subject: str, body: str) -> None:
-        await asyncio.to_thread(self._send_blocking, subject, body)
+        message = f"<b>{escape(subject)}</b>\n\n{escape(body)}"
+        await self._telegram_client.send_message(self._chat_id, message)
 
-    def _send_blocking(self, subject: str, body: str) -> None:
-        message = EmailMessage()
-        message["Subject"] = subject
-        message["From"] = self._sender
-        message["To"] = self._recipient
-        message.set_content(body)
 
-        with smtplib.SMTP(self._host, self._port, timeout=10) as smtp:
-            if self._username:
-                smtp.starttls()
-                smtp.login(self._username, self._password)
-            smtp.send_message(message)
+class DisabledNotificationClient(NotificationClient):
+    def __init__(self, reason: str = "Telegram notifications are not configured") -> None:
+        self._reason = reason
+
+    async def send_notification(self, subject: str, body: str) -> None:
+        _ = (subject, body)
+        raise RuntimeError(self._reason)

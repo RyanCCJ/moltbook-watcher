@@ -10,8 +10,8 @@ from src.workers.ingestion_worker import IngestionWorker
 
 
 class ThroughputClient:
-    async def list_posts(self, window: str, cursor: str | None = None, limit: int = 100, sort: str = "top"):
-        _ = (window, cursor, limit, sort)
+    async def list_posts(self, time: str, cursor: str | None = None, limit: int = 100, sort: str = "top"):
+        _ = (time, cursor, limit, sort)
         posts = [
             MoltbookPost(
                 source_url=f"https://moltbook.com/p/{i}",
@@ -57,7 +57,7 @@ async def test_ingestion_handles_500_candidates_within_hourly_sla() -> None:
     worker = IngestionWorker(moltbook_client=ThroughputClient(), scoring_service=ThroughputScorer())
 
     async with async_session() as session:
-        metrics = await worker.run_cycle(session, window="today")
+        metrics = await worker.run_cycle(session, time="hour")
 
     assert metrics.fetched_count == 500
     assert metrics.persisted_count == 500

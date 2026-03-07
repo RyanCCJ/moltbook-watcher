@@ -13,8 +13,8 @@ from src.workers.ingestion_worker import IngestionWorker
 
 
 class FakeMoltbookClient:
-    async def list_posts(self, window: str, cursor: str | None = None, limit: int = 100, sort: str = "top"):
-        _ = (window, cursor, limit, sort)
+    async def list_posts(self, time: str, cursor: str | None = None, limit: int = 100, sort: str = "top"):
+        _ = (time, cursor, limit, sort)
         return (
             [
                 MoltbookPost(
@@ -92,7 +92,7 @@ async def test_ingestion_cycle_filters_duplicates_and_persists_scores() -> None:
     worker = IngestionWorker(moltbook_client=FakeMoltbookClient(), scoring_service=FakeScoringService())
 
     async with async_session() as session:
-        metrics = await worker.run_cycle(session, window="today")
+        metrics = await worker.run_cycle(session, time="day")
         await session.commit()
 
         candidates = (await session.scalars(select(CandidatePost))).all()

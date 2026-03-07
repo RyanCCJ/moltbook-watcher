@@ -51,7 +51,7 @@ async def test_publish_worker_handles_retries_success_and_terminal_notification(
         candidate_success = await candidate_repo.create(
             session,
             source_url="https://moltbook.com/p/success",
-            source_window="today",
+            source_time="day",
             source_post_id="success",
             author_handle="alice",
             raw_content="publish success",
@@ -66,7 +66,7 @@ async def test_publish_worker_handles_retries_success_and_terminal_notification(
         candidate_fail = await candidate_repo.create(
             session,
             source_url="https://moltbook.com/p/fail",
-            source_window="today",
+            source_time="day",
             source_post_id="fail",
             author_handle="bob",
             raw_content="publish fail",

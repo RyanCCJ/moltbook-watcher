@@ -29,7 +29,7 @@ async def test_publish_mode_pause_and_jobs_endpoints_follow_contract() -> None:
     async with async_session() as session:
         candidate = CandidatePost(
             source_url="https://moltbook.com/p/publish-1",
-            source_window="today",
+            source_time="day",
             source_post_id="publish-1",
             author_handle="alice",
             raw_content="Publish me",

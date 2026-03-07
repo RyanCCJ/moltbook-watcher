@@ -17,8 +17,8 @@ from src.workers.publish_worker import PublishWorker
 
 
 class E2EMoltbookClient:
-    async def list_posts(self, window: str, cursor: str | None = None, limit: int = 100, sort: str = "top"):
-        _ = (window, cursor, limit, sort)
+    async def list_posts(self, time: str, cursor: str | None = None, limit: int = 100, sort: str = "top"):
+        _ = (time, cursor, limit, sort)
         return (
             [
                 MoltbookPost(
@@ -85,7 +85,7 @@ async def test_candidate_to_publish_e2e_smoke() -> None:
     payload_builder = ReviewPayloadService(use_ollama=False)
 
     async with async_session() as session:
-        metrics = await ingestion_worker.run_cycle(session, window="today")
+        metrics = await ingestion_worker.run_cycle(session, time="day")
         assert metrics.persisted_count == 1
 
         candidate_obj = (await session.scalars(select(CandidatePost))).first()

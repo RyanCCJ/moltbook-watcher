@@ -30,7 +30,7 @@ async def test_review_list_and_decision_endpoints_follow_contract() -> None:
     async with async_session() as session:
         candidate = CandidatePost(
             source_url="https://moltbook.com/p/10",
-            source_window="today",
+            source_time="day",
             source_post_id="10",
             author_handle="reviewer",
             raw_content="Operator-focused review payload",

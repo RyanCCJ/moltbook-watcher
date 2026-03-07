@@ -1,18 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import httpx
 
 from src.services.logging_service import get_logger
 
-_SUPPORTED_WINDOWS = {"all_time", "year", "month", "week", "today", "past_hour"}
+_SUPPORTED_TIMES = {"hour", "day", "week", "month", "all"}
 _SUPPORTED_SORTS = {"hot", "new", "top", "rising"}
-_MAX_SCAN_PAGES = 3
-_MAX_SCAN_POSTS = 60
-_MIN_SCAN_POSTS = 12
-_PAGE_LIMIT_CAP = 25
 _LEGACY_POST_URL_PREFIX = "https://www.moltbook.com/posts/"
 _CANONICAL_POST_URL_PREFIX = "https://www.moltbook.com/post/"
 
@@ -46,53 +42,32 @@ class MoltbookAPIClient:
 
     async def list_posts(
         self,
-        window: str,
+        time: str,
         cursor: str | None = None,
         limit: int = 100,
         sort: str = "top",
     ) -> tuple[list[MoltbookPost], str | None]:
-        if window not in _SUPPORTED_WINDOWS:
-            raise ValueError(f"Unsupported window: {window}")
+        if time not in _SUPPORTED_TIMES:
+            raise ValueError(f"Unsupported time: {time}")
         if sort not in _SUPPORTED_SORTS:
             raise ValueError(f"Unsupported sort: {sort}")
 
-        target_limit = max(1, limit)
-        scan_budget = min(_MAX_SCAN_POSTS, max(_MIN_SCAN_POSTS, target_limit * 3))
-        cursor_token = cursor
-        scanned_count = 0
-        collected: list[MoltbookPost] = []
+        response = await self._client.get(
+            f"{self._base_url}/posts",
+            params={"sort": sort, "time": time, "cursor": cursor, "limit": max(1, limit)},
+            headers={"Authorization": f"Bearer {self._token}"},
+        )
+        response.raise_for_status()
+        payload = response.json()
 
-        for _ in range(_MAX_SCAN_PAGES):
-            remaining_budget = scan_budget - scanned_count
-            if remaining_budget <= 0:
-                break
+        raw_items = payload.get("items")
+        if raw_items is None:
+            raw_items = payload.get("posts", [])
+        if not raw_items:
+            return [], payload.get("next_cursor")
 
-            page_limit = min(_PAGE_LIMIT_CAP, remaining_budget)
-            response = await self._client.get(
-                f"{self._base_url}/posts",
-                params={"sort": sort, "cursor": cursor_token, "limit": page_limit},
-                headers={"Authorization": f"Bearer {self._token}"},
-            )
-            response.raise_for_status()
-            payload = response.json()
-
-            raw_items = payload.get("items")
-            if raw_items is None:
-                raw_items = payload.get("posts", [])
-            if not raw_items:
-                return collected[:target_limit], payload.get("next_cursor")
-
-            parsed_items = [self._parse_item(item) for item in raw_items]
-            scanned_count += len(parsed_items)
-            collected.extend(post for post in parsed_items if self._matches_window(post.created_at, window))
-            if len(collected) >= target_limit:
-                return collected[:target_limit], payload.get("next_cursor")
-
-            cursor_token = payload.get("next_cursor")
-            if cursor_token is None:
-                return collected[:target_limit], None
-
-        return collected[:target_limit], cursor_token
+        parsed_items = [self._parse_item(item) for item in raw_items]
+        return parsed_items[: max(1, limit)], payload.get("next_cursor")
 
     async def fetch_comments(
         self,
@@ -198,23 +173,3 @@ class MoltbookAPIClient:
         if source_url.startswith(_LEGACY_POST_URL_PREFIX):
             return source_url.replace(_LEGACY_POST_URL_PREFIX, _CANONICAL_POST_URL_PREFIX, 1)
         return source_url
-
-    @staticmethod
-    def _matches_window(created_at: datetime, window: str) -> bool:
-        if window == "all_time":
-            return True
-
-        now = datetime.now(tz=UTC)
-        if window == "past_hour":
-            cutoff = now - timedelta(hours=1)
-        elif window == "today":
-            cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        elif window == "week":
-            cutoff = now - timedelta(days=7)
-        elif window == "month":
-            cutoff = now - timedelta(days=30)
-        elif window == "year":
-            cutoff = now - timedelta(days=365)
-        else:  # pragma: no cover - protected by window validation in list_posts
-            return False
-        return created_at >= cutoff

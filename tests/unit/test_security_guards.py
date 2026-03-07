@@ -6,14 +6,14 @@ from src.services.logging_service import get_logger, redact_secrets
 def test_redact_secrets_masks_sensitive_values() -> None:
     payload = {
         "api_token": "secret-token",
-        "smtp_password": "super-secret",
+        "telegram_bot_token": "super-secret",
         "normal_field": "ok",
     }
 
     redacted = redact_secrets(payload)
 
     assert redacted["api_token"] == "***REDACTED***"
-    assert redacted["smtp_password"] == "***REDACTED***"
+    assert redacted["telegram_bot_token"] == "***REDACTED***"
     assert redacted["normal_field"] == "ok"
 
 

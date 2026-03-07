@@ -190,4 +190,4 @@ curl http://127.0.0.1:8000/health
 
 - Never commit `.env` with real tokens/secrets.
 - Rotate Threads tokens if exposed.
-- Keep `THREADS_APP_SECRET`, `THREADS_API_TOKEN`, and SMTP secrets in secret manager for production.
+- Keep `THREADS_APP_SECRET`, `THREADS_API_TOKEN`, and `TELEGRAM_BOT_TOKEN` in secret manager for production.

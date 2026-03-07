@@ -23,7 +23,7 @@ async def test_review_decision_lifecycle_transitions() -> None:
         candidate = await candidate_repo.create(
             session,
             source_url="https://moltbook.com/p/20",
-            source_window="today",
+            source_time="day",
             source_post_id="20",
             author_handle="alice",
             raw_content="Review me",

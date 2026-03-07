@@ -16,8 +16,8 @@ class ReviewBuildMoltbookClient:
     def __init__(self) -> None:
         self.fetch_comments_calls = 0
 
-    async def list_posts(self, window: str, cursor: str | None = None, limit: int = 100, sort: str = "top"):
-        _ = (window, cursor, limit, sort)
+    async def list_posts(self, time: str, cursor: str | None = None, limit: int = 100, sort: str = "top"):
+        _ = (time, cursor, limit, sort)
         return (
             [
                 MoltbookPost(
@@ -68,7 +68,7 @@ async def test_review_worker_builds_pending_review_items_from_queued_candidates(
     review_worker = ReviewWorker(payload_service=ReviewPayloadService(use_ollama=False))
 
     async with async_session() as session:
-        await ingestion_worker.run_cycle(session, window="today")
+        await ingestion_worker.run_cycle(session, time="day")
         first = await review_worker.run_cycle(session)
         second = await review_worker.run_cycle(session)
         await session.commit()

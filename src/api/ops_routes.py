@@ -9,12 +9,12 @@ router = APIRouter(prefix="/ops", tags=["ops"])
 
 @router.post("/ingestion/run")
 async def run_ingestion(
-    window: str = Query(default="past_hour"),
+    time: str = Query(default="hour", pattern="^(hour|day|week|month|all)$"),
     sort: str = Query(default="top"),
     limit: int = Query(default=20, ge=1, le=200),
 ) -> dict[str, object]:
     try:
-        metrics = await run_ingestion_once(window=window, limit=limit, sort=sort)
+        metrics = await run_ingestion_once(time=time, limit=limit, sort=sort)
     except Exception as error:
         raise HTTPException(status_code=500, detail=f"ingestion_failed: {error}") from error
     return {"ok": True, "metrics": metrics}

@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 
-WINDOW_CHOICES = ["all_time", "year", "month", "week", "today", "past_hour"]
+TIME_CHOICES = ["hour", "day", "week", "month", "all"]
 SORT_CHOICES = ["hot", "new", "top", "rising"]
 DEFAULT_TIMEOUT_SECONDS = 180.0
 
@@ -46,7 +46,7 @@ def _cmd_ingest(client: httpx.Client, args: argparse.Namespace) -> int:
         client,
         "POST",
         "/ops/ingestion/run",
-        params={"window": args.window, "sort": args.sort, "limit": args.limit},
+        params={"time": args.time, "sort": args.sort, "limit": args.limit},
     )
     _print_json(payload)
     return 0
@@ -96,7 +96,7 @@ def _cmd_smoke(client: httpx.Client, args: argparse.Namespace) -> int:
         client,
         "POST",
         "/ops/ingestion/run",
-        params={"window": args.window, "sort": args.sort, "limit": args.limit},
+        params={"time": args.time, "sort": args.sort, "limit": args.limit},
     )
     print("# ingestion")
     _print_json(ingest)
@@ -155,10 +155,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p = subparsers.add_parser("ingest", help="Run one ingestion cycle")
     p.add_argument(
-        "--window",
-        default="past_hour",
-        choices=WINDOW_CHOICES,
-        help="Time window filter (applied locally after fetch)",
+        "--time",
+        default="hour",
+        choices=TIME_CHOICES,
+        help="Upstream time filter passed directly to the Moltbook posts API",
     )
     p.add_argument("--sort", default="top", choices=SORT_CHOICES)
     p.add_argument("--limit", type=int, default=1)
@@ -190,10 +190,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p = subparsers.add_parser("smoke", help="US1->US3 quick smoke flow")
     p.add_argument(
-        "--window",
-        default="past_hour",
-        choices=WINDOW_CHOICES,
-        help="Time window filter (applied locally after fetch)",
+        "--time",
+        default="hour",
+        choices=TIME_CHOICES,
+        help="Upstream time filter passed directly to the Moltbook posts API",
     )
     p.add_argument("--sort", default="top", choices=SORT_CHOICES)
     p.add_argument("--limit", type=int, default=1)

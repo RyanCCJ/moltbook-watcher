@@ -49,6 +49,11 @@ async def _ensure_candidate_post_columns() -> None:
             return {column["name"] for column in inspect(sync_connection).get_columns("candidate_posts")}
 
         existing_columns = await connection.run_sync(_read_columns)
+        if "source_window" in existing_columns and "source_time" not in existing_columns:
+            await connection.execute(text("ALTER TABLE candidate_posts RENAME COLUMN source_window TO source_time"))
+            existing_columns.remove("source_window")
+            existing_columns.add("source_time")
+
         if "top_comments_snapshot" in existing_columns:
             return
 
