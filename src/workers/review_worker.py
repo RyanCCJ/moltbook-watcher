@@ -6,8 +6,10 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.config.settings import get_settings
 from src.integrations.moltbook_api_client import MoltbookComment
 from src.models.candidate_post import CandidatePost
+from src.models.lifecycle import CandidateStatus, ReviewDecision
 from src.models.review_item import ReviewItem, ReviewItemRepository
 from src.models.score_card import ScoreCard
 from src.services.review_payload_service import ReviewPayloadService
@@ -24,7 +26,10 @@ class ReviewWorker:
         self,
         payload_service: ReviewPayloadService | None = None,
     ) -> None:
-        self._payload_service = payload_service or ReviewPayloadService()
+        settings = get_settings()
+        self._payload_service = payload_service or ReviewPayloadService(
+            threads_draft_min_score=settings.review_min_score
+        )
         self._review_repo = ReviewItemRepository()
 
     async def run_cycle(self, session: AsyncSession) -> ReviewBuildMetrics:
@@ -32,7 +37,7 @@ class ReviewWorker:
             select(CandidatePost, ScoreCard)
             .join(ScoreCard, ScoreCard.candidate_post_id == CandidatePost.id)
             .outerjoin(ReviewItem, ReviewItem.candidate_post_id == CandidatePost.id)
-            .where(CandidatePost.status == "queued")
+            .where(CandidatePost.status.in_([CandidateStatus.QUEUED.value, CandidateStatus.APPROVED.value]))
             .where(ReviewItem.id.is_(None))
             .order_by(CandidatePost.captured_at.desc())
         )
@@ -65,6 +70,12 @@ class ReviewWorker:
                 top_comments_translated=payload.top_comments_translated,
                 threads_draft=payload.threads_draft,
                 follow_up_rationale=payload.follow_up_rationale,
+                decision=(
+                    ReviewDecision.APPROVED.value
+                    if candidate.status == CandidateStatus.APPROVED.value
+                    else ReviewDecision.PENDING.value
+                ),
+                reviewed_by="semi-auto" if candidate.status == CandidateStatus.APPROVED.value else None,
             )
             created_count += 1
 

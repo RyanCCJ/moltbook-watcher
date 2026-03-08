@@ -6,7 +6,10 @@ Current pipeline:
 - Fetch posts from Moltbook
 - Fetch top comments for each post
 - Deduplicate and score with Ollama
-- Build a review queue
+- Archive low-score posts immediately after scoring
+- Build a review queue only for posts that meet the review threshold
+- Auto-approve fast-track posts when `PUBLISH_MODE=semi-auto`
+- Send one Telegram ingestion digest per cycle instead of per-item push notifications
 - Auto-archive stale queued items before the daily Telegram summary
 - Let operators recall high-score auto-archived items from Telegram with `/recall`
 - Let operators approve/reject before publishing
@@ -35,6 +38,9 @@ Language behavior:
 - `TRANSLATION_LANGUAGE` default is empty, so translation is skipped.
 - Set `TRANSLATION_LANGUAGE=zh-TW` to restore previous always-translate-to-Chinese behavior.
 - `THREADS_LANGUAGE` controls the generated Threads draft language independently (default `en`).
+- `INGESTION_TIME`, `INGESTION_LIMIT`, and `INGESTION_SORT` control the default ingestion window.
+- `REVIEW_MIN_SCORE` controls which posts enter review (default `3.5`).
+- `AUTO_PUBLISH_MIN_SCORE` controls fast-track eligibility for `PUBLISH_MODE=semi-auto` (default `4.0`).
 
 ### 2) Initialize DB
 
@@ -53,11 +59,12 @@ make worker
 
 ```bash
 uv run python scripts/ops_cli.py health
-uv run python scripts/ops_cli.py ingest --window past_hour --sort top --limit 1 --timeout 300
+uv run python scripts/ops_cli.py ingest --time hour --sort top --limit 1 --timeout 300
 uv run python scripts/ops_cli.py review-list --status pending --limit 10
 uv run python scripts/ops_cli.py review-decide <REVIEW_ITEM_ID> --decision approved --reviewed-by operator
 uv run python scripts/ops_cli.py publish-run
 uv run python scripts/ops_cli.py publish-jobs
+make reset
 ```
 
 Show parameter choices:
@@ -68,7 +75,8 @@ uv run python scripts/ops_cli.py ingest --help
 
 ## Local API Endpoints
 
-- `POST /ops/ingestion/run?window=<...>&sort=<...>&limit=<...>`
+- `POST /ops/ingestion/run?time=<...>&sort=<...>&limit=<...>`
+- Defaults for ingestion come from `INGESTION_TIME`, `INGESTION_LIMIT`, and `INGESTION_SORT`.
 - `GET /review-items?status=pending&limit=10`
 - `POST /review-items/{id}/decision`
 - `POST /ops/publish/run`
@@ -100,6 +108,10 @@ uv run --extra dev ruff check .
 - `persisted_count=0`:
   - Usually dedup filtered existing content
   - Run `make reset` for clean smoke tests
+  - `make reset` now resets database tables only; Redis is no longer part of the runtime
+- No pending review item after ingestion:
+  - Check whether the post scored below `REVIEW_MIN_SCORE`
+  - Low-score posts now go directly to `archived`
 
 ## Additional Docs
 

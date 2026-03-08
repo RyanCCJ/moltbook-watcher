@@ -71,6 +71,22 @@ async def _ensure_candidate_post_columns() -> None:
         )
 
 
+async def _ensure_score_card_columns() -> None:
+    engine = get_engine()
+    async with engine.begin() as connection:
+        def _read_columns(sync_connection) -> set[str]:
+            table_names = inspect(sync_connection).get_table_names()
+            if "score_cards" not in table_names:
+                return set()
+            return {column["name"] for column in inspect(sync_connection).get_columns("score_cards")}
+
+        existing_columns = await connection.run_sync(_read_columns)
+        if "route_decision" in existing_columns:
+            return
+
+        await connection.execute(text("ALTER TABLE score_cards ADD COLUMN route_decision VARCHAR(32)"))
+
+
 async def _normalize_legacy_moltbook_urls() -> None:
     engine = get_engine()
     async with engine.begin() as connection:
@@ -111,6 +127,7 @@ async def main() -> None:
     await create_schema()
     await _ensure_review_item_columns()
     await _ensure_candidate_post_columns()
+    await _ensure_score_card_columns()
     await _normalize_legacy_moltbook_urls()
 
 

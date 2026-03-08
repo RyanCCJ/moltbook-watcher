@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from sqlalchemy import func, select
+
 from src.config.settings import get_settings
 from src.integrations.moltbook_api_client import MoltbookAPIClient
 from src.integrations.notification_client import (
@@ -10,11 +12,13 @@ from src.integrations.telegram_client import TelegramClient
 from src.integrations.threads_client import ThreadsClient
 from src.models.base import AsyncSessionLocal
 from src.models.lifecycle import ReviewDecision
+from src.models.review_item import ReviewItem
 from src.services.logging_service import get_logger
 from src.services.notification_service import NotificationService
+from src.services.publish_mode_service import publish_control
 from src.services.review_payload_service import ReviewPayloadService
+from src.services.routing_service import RoutingService
 from src.services.scoring_service import ScoringService
-from src.services.telegram_reporting import load_review_item_payloads
 from src.services.telegram_service import TelegramService
 from src.workers.ingestion_worker import IngestionWorker
 from src.workers.publish_worker import PublishWorker
@@ -31,8 +35,15 @@ class ReviewCycleError(RuntimeError):
     pass
 
 
-async def run_ingestion_once(time: str = "hour", limit: int = 100, sort: str = "top") -> dict[str, int | str]:
+async def run_ingestion_once(
+    time: str | None = None,
+    limit: int | None = None,
+    sort: str | None = None,
+) -> dict[str, object]:
     settings = get_settings()
+    resolved_time = time or settings.ingestion_time
+    resolved_limit = limit if limit is not None else settings.ingestion_limit
+    resolved_sort = sort or settings.ingestion_sort
     telegram_client: TelegramClient | None = None
     moltbook_client = MoltbookAPIClient(
         base_url=settings.moltbook_api_base_url,
@@ -42,19 +53,30 @@ async def run_ingestion_once(time: str = "hour", limit: int = 100, sort: str = "
         ollama_base_url=settings.ollama_base_url,
         ollama_model=settings.ollama_model,
     )
-    ingestion_worker = IngestionWorker(moltbook_client=moltbook_client, scoring_service=scoring_service)
+    ingestion_worker = IngestionWorker(
+        moltbook_client=moltbook_client,
+        scoring_service=scoring_service,
+        routing_service=RoutingService(fast_track_min_score=settings.auto_publish_min_score),
+        review_min_score=settings.review_min_score,
+    )
     review_payload_service = ReviewPayloadService(
         ollama_base_url=settings.ollama_base_url,
         ollama_model=settings.ollama_model,
         translation_language=settings.translation_language,
         threads_language=settings.threads_language,
+        threads_draft_min_score=settings.review_min_score,
     )
     review_worker = ReviewWorker(payload_service=review_payload_service)
 
     try:
         async with AsyncSessionLocal() as session:
             try:
-                ingestion_metrics = await ingestion_worker.run_cycle(session, time=time, limit=limit, sort=sort)
+                ingestion_metrics = await ingestion_worker.run_cycle(
+                    session,
+                    time=resolved_time,
+                    limit=resolved_limit,
+                    sort=resolved_sort,
+                )
                 await session.commit()
             except Exception as error:
                 await session.rollback()
@@ -68,26 +90,59 @@ async def run_ingestion_once(time: str = "hour", limit: int = 100, sort: str = "
                 await session.rollback()
                 raise ReviewCycleError(str(error)) from error
 
-        if settings.telegram_enabled and settings.telegram_chat_id.strip() and review_metrics.created_count > 0:
+        pending_review_count = 0
+        if settings.telegram_enabled and settings.telegram_chat_id.strip() and ingestion_metrics.persisted_count > 0:
             telegram_client = TelegramClient(settings.telegram_bot_token)
             telegram_service = TelegramService(telegram_client, settings.telegram_chat_id)
             async with AsyncSessionLocal() as session:
-                items = await load_review_item_payloads(
-                    session,
-                    status=ReviewDecision.PENDING.value,
-                    limit=review_metrics.created_count,
+                pending_review_count = (
+                    await session.scalar(
+                        select(func.count())
+                        .select_from(ReviewItem)
+                        .where(ReviewItem.decision == ReviewDecision.PENDING.value)
+                    )
+                    or 0
                 )
             try:
-                await telegram_service.push_pending_items(items)
+                auto_publish_label = "auto-approved" if publish_control.mode == "semi-auto" else "would qualify"
+                auto_publish_count = (
+                    ingestion_metrics.auto_approved_count
+                    if publish_control.mode == "semi-auto"
+                    else ingestion_metrics.fast_track_count
+                )
+                await telegram_client.send_message(
+                    settings.telegram_chat_id,
+                    telegram_service.format_ingestion_digest(
+                        fetched_count=ingestion_metrics.fetched_count,
+                        persisted_count=ingestion_metrics.persisted_count,
+                        filtered_duplicate_count=ingestion_metrics.filtered_duplicate_count,
+                        archived_count=ingestion_metrics.archived_count,
+                        score_breakdown=ingestion_metrics.score_breakdown,
+                        risk_breakdown=ingestion_metrics.risk_breakdown,
+                        auto_publish_count=auto_publish_count,
+                        auto_publish_label=auto_publish_label,
+                        pending_total=pending_review_count,
+                        review_min_score=settings.review_min_score,
+                        auto_publish_min_score=settings.auto_publish_min_score,
+                    ),
+                )
             except Exception as error:
-                logger.error("telegram_pending_push_failed", error=str(error))
+                logger.error("telegram_ingestion_digest_failed", error=str(error))
         return {
-            "time": time,
-            "sort": sort,
-            "limit": limit,
+            "time": resolved_time,
+            "sort": resolved_sort,
+            "limit": resolved_limit,
             "fetched_count": ingestion_metrics.fetched_count,
             "persisted_count": ingestion_metrics.persisted_count,
+            "scored_count": ingestion_metrics.scored_count,
+            "queued_count": ingestion_metrics.queued_count,
+            "archived_count": ingestion_metrics.archived_count,
+            "auto_approved_count": ingestion_metrics.auto_approved_count,
+            "auto_publish_ready_count": ingestion_metrics.fast_track_count,
             "filtered_duplicate_count": ingestion_metrics.filtered_duplicate_count,
+            "score_breakdown": ingestion_metrics.score_breakdown,
+            "risk_breakdown": ingestion_metrics.risk_breakdown,
+            "pending_review_count": pending_review_count,
             "review_items_created": review_metrics.created_count,
         }
     finally:

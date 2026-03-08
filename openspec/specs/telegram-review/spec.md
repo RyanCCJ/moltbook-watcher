@@ -5,19 +5,18 @@ Provides telegram integration for telegram-review.
 ## Requirements
 
 ### Requirement: Push notification for new pending items
-The system SHALL send a Telegram message to the operator for each new review item created during a review worker cycle. The message SHALL include the threads draft (or translated content as fallback, or english draft as second fallback), the final AI score, risk tags, source URL, and inline action buttons.
 
-#### Scenario: New review item created with threads draft
-- **WHEN** the review worker cycle creates a new review item that has a non-empty threads draft
-- **THEN** the system SHALL send a Telegram message displaying the threads draft, final score, risk tags, and source URL, with inline buttons for Approve, Reject, and Reject+Comment
+The system SHALL NOT automatically send individual Telegram messages for each new review item after an ingestion cycle. Instead, the system SHALL send a single ingestion digest summary (defined in `ingestion-digest-notification` capability). The operator SHALL use `/pending` to view and act on individual pending review items on demand.
 
-#### Scenario: New review item without threads draft
-- **WHEN** the review worker cycle creates a new review item with an empty threads draft
-- **THEN** the system SHALL fall back to displaying the translated content, or english draft if translated content is also empty
+#### Scenario: Ingestion cycle completes with new review items
 
-#### Scenario: No new review items
-- **WHEN** the review worker cycle creates zero new review items
-- **THEN** the system SHALL NOT send any Telegram notification
+- **WHEN** the ingestion cycle creates new review items
+- **THEN** the system SHALL send a single digest summary message instead of individual per-item notifications
+
+#### Scenario: Operator reviews pending items
+
+- **WHEN** the operator sends `/pending` via Telegram
+- **THEN** the system SHALL display individual pending review items with inline action buttons (Approve, Reject, Reject+Comment, Edit Draft), same as before
 
 ### Requirement: Approve via inline button
 The system SHALL allow the operator to approve a review item by tapping the Approve inline keyboard button. The callback data SHALL use the format `approve:<review_item_id>`. Upon receiving this callback, the system SHALL call the review decision logic with decision `approved` and `reviewedBy` set to `telegram`, then edit the original message to reflect the approval.

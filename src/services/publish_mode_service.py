@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from src.config.settings import get_settings
+
 
 class PublishControlService:
     def __init__(self, initial_mode: str = "manual-approval") -> None:
@@ -16,7 +18,7 @@ class PublishControlService:
 
     def switch_mode(self, mode: str, reason: str | None = None) -> None:
         _ = reason
-        if mode not in {"manual-approval", "low-risk-auto"}:
+        if mode not in {"manual-approval", "semi-auto"}:
             raise ValueError("Invalid publish mode")
         self._mode = mode
 
@@ -37,4 +39,4 @@ class PublishControlService:
         return risk_score <= 1
 
 
-publish_control = PublishControlService()
+publish_control = PublishControlService(initial_mode=get_settings().publish_mode)

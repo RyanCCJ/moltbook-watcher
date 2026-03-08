@@ -26,6 +26,7 @@ class ScoreCard(Base):
     risk_score: Mapped[int] = mapped_column(Integer, nullable=False)
     content_score: Mapped[float] = mapped_column(Float, nullable=False)
     final_score: Mapped[float] = mapped_column(Float, nullable=False)
+    route_decision: Mapped[str | None] = mapped_column(String(32), nullable=True, default=None)
     score_version: Mapped[str] = mapped_column(String(64), nullable=False)
     scored_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(tz=UTC)
@@ -46,6 +47,7 @@ class ScoreCardRepository:
         risk_score: int,
         content_score: float,
         final_score: float,
+        route_decision: str | None = None,
         score_version: str,
     ) -> ScoreCard:
         score_card = ScoreCard(
@@ -58,6 +60,7 @@ class ScoreCardRepository:
             risk_score=risk_score,
             content_score=content_score,
             final_score=final_score,
+            route_decision=route_decision,
             score_version=score_version,
         )
         session.add(score_card)

@@ -53,7 +53,18 @@ class _IngestionWorker:
         )
         session.add(candidate)
         await session.flush()
-        return SimpleNamespace(fetched_count=1, persisted_count=1, filtered_duplicate_count=0)
+        return SimpleNamespace(
+            fetched_count=1,
+            persisted_count=1,
+            scored_count=1,
+            queued_count=1,
+            archived_count=0,
+            auto_approved_count=0,
+            fast_track_count=0,
+            filtered_duplicate_count=0,
+            score_breakdown={"auto_publish": 0, "review_queue": 1, "archived": 0},
+            risk_breakdown={"low": 1, "medium": 0, "high": 0},
+        )
 
 
 class _FailingReviewWorker:
@@ -106,6 +117,11 @@ async def test_run_ingestion_once_keeps_ingestion_data_when_review_fails(tmp_pat
             ollama_model="test-model",
             translation_language="",
             threads_language="en",
+            review_min_score=3.5,
+            auto_publish_min_score=4.0,
+            ingestion_time="hour",
+            ingestion_limit=20,
+            ingestion_sort="top",
         ),
     )
 
@@ -120,26 +136,29 @@ async def test_run_ingestion_once_keeps_ingestion_data_when_review_fails(tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_run_ingestion_once_pushes_pending_items_to_telegram(tmp_path, monkeypatch) -> None:
+async def test_run_ingestion_once_sends_ingestion_digest_to_telegram(tmp_path, monkeypatch) -> None:
     db_path = tmp_path / "runtime_telegram.db"
     engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
 
-    pushed_items: list[list[dict]] = []
-    telegram_clients: list[object] = []
+    sent_messages: list[tuple[str, str]] = []
 
     class _StubTelegramClient:
+        async def send_message(self, chat_id: str, text: str, reply_markup=None) -> None:
+            _ = reply_markup
+            sent_messages.append((chat_id, text))
+
         async def close(self) -> None:
             return None
 
     class _StubTelegramService:
         def __init__(self, telegram_client, chat_id: str) -> None:
-            telegram_clients.append((telegram_client, chat_id))
+            _ = (telegram_client, chat_id)
 
-        async def push_pending_items(self, items: list[dict]) -> None:
-            pushed_items.append(items)
+        def format_ingestion_digest(self, **kwargs) -> str:
+            return f"digest:{kwargs['persisted_count']}:{kwargs['pending_total']}"
 
     monkeypatch.setattr(runtime, "AsyncSessionLocal", session_factory)
     monkeypatch.setattr(runtime, "MoltbookAPIClient", _NoopMoltbookClient)
@@ -149,16 +168,6 @@ async def test_run_ingestion_once_pushes_pending_items_to_telegram(tmp_path, mon
     monkeypatch.setattr(runtime, "ReviewWorker", _SuccessfulReviewWorker)
     monkeypatch.setattr(runtime, "TelegramClient", lambda bot_token: _StubTelegramClient())
     monkeypatch.setattr(runtime, "TelegramService", _StubTelegramService)
-
-    async def fake_load_review_item_payloads(session, status, limit):
-        _ = (session, status, limit)
-        return [{"id": "review-1", "threadsDraft": "Draft"}]
-
-    monkeypatch.setattr(
-        runtime,
-        "load_review_item_payloads",
-        fake_load_review_item_payloads,
-    )
     monkeypatch.setattr(
         runtime,
         "get_settings",
@@ -172,6 +181,11 @@ async def test_run_ingestion_once_pushes_pending_items_to_telegram(tmp_path, mon
             telegram_enabled=True,
             telegram_bot_token="telegram-token",
             telegram_chat_id="12345",
+            review_min_score=3.5,
+            auto_publish_min_score=4.0,
+            ingestion_time="hour",
+            ingestion_limit=20,
+            ingestion_sort="top",
         ),
     )
 
@@ -179,8 +193,8 @@ async def test_run_ingestion_once_pushes_pending_items_to_telegram(tmp_path, mon
 
     assert metrics["review_items_created"] == 1
     assert metrics["time"] == "day"
-    assert len(telegram_clients) == 1
-    assert pushed_items == [[{"id": "review-1", "threadsDraft": "Draft"}]]
+    assert sent_messages == [("12345", "digest:1:0")]
+    assert metrics["pending_review_count"] == 0
 
 
 @pytest.mark.asyncio

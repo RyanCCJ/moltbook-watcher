@@ -109,6 +109,9 @@ async def _build_app_with_telegram() -> tuple[object, async_sessionmaker, _StubT
     app.state.settings = SimpleNamespace(
         telegram_bot_token="test-telegram-token",
         telegram_chat_id="12345",
+        ingestion_time="hour",
+        ingestion_sort="top",
+        ingestion_limit=20,
     )
     app.state.telegram_client = telegram_client
     app.state.telegram_service = TelegramService(telegram_client, "12345")
@@ -355,8 +358,8 @@ async def test_telegram_review_command_rejects_missing_or_invalid_index() -> Non
 async def test_telegram_ingest_publish_stats_and_health_commands(monkeypatch) -> None:
     app, _, telegram_client, _ = await _build_app_with_telegram()
 
-    async def fake_ingestion(*, time: str = "hour", sort: str = "top", limit: int = 100) -> dict[str, int | str]:
-        assert (time, sort, limit) == ("hour", "top", 100)
+    async def fake_ingestion(*, time: str = "hour", sort: str = "top", limit: int = 20) -> dict[str, int | str]:
+        assert (time, sort, limit) == ("hour", "top", 20)
         return {
             "time": time,
             "sort": sort,
@@ -412,12 +415,11 @@ async def test_telegram_ingest_publish_stats_and_health_commands(monkeypatch) ->
     assert response.status_code == 200
     assert "Ingestion started…" in telegram_client.sent_messages[0][1]
     assert "Time: hour" in telegram_client.sent_messages[0][1]
-    assert "Ingestion finished." in telegram_client.sent_messages[2][1]
-    assert "Time: hour" in telegram_client.sent_messages[2][1]
+    assert "Limit: 20" in telegram_client.sent_messages[0][1]
     assert telegram_client.sent_messages[1][1] == "Publish cycle started…"
-    assert "Publish finished." in telegram_client.sent_messages[3][1]
-    assert "Pipeline stats" in telegram_client.sent_messages[4][1]
-    assert "System health" in telegram_client.sent_messages[5][1]
+    assert "Publish finished." in telegram_client.sent_messages[2][1]
+    assert "Pipeline stats" in telegram_client.sent_messages[3][1]
+    assert "System health" in telegram_client.sent_messages[4][1]
 
 
 @pytest.mark.asyncio
@@ -425,7 +427,7 @@ async def test_telegram_ingest_command_accepts_tokens_in_any_order(monkeypatch) 
     app, _, telegram_client, _ = await _build_app_with_telegram()
     created_coroutines: list = []
 
-    async def fake_ingestion(*, time: str = "hour", sort: str = "top", limit: int = 100) -> dict[str, int | str]:
+    async def fake_ingestion(*, time: str = "hour", sort: str = "top", limit: int = 20) -> dict[str, int | str]:
         assert (time, sort, limit) == ("week", "rising", 12)
         return {
             "time": time,
@@ -455,7 +457,6 @@ async def test_telegram_ingest_command_accepts_tokens_in_any_order(monkeypatch) 
     assert "Time: week" in telegram_client.sent_messages[0][1]
     assert "Sort: rising" in telegram_client.sent_messages[0][1]
     assert "Limit: 12" in telegram_client.sent_messages[0][1]
-    assert "Time: week" in telegram_client.sent_messages[1][1]
 
 
 @pytest.mark.asyncio

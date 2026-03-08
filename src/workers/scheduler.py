@@ -23,9 +23,14 @@ logger = get_logger(__name__)
 
 
 async def run_ingestion_cycle() -> None:
+    settings = get_settings()
     logger.info("ingestion_cycle_triggered", ts=datetime.now(tz=UTC).isoformat())
     try:
-        metrics = await run_ingestion_once(time="hour")
+        metrics = await run_ingestion_once(
+            time=settings.ingestion_time,
+            limit=settings.ingestion_limit,
+            sort=settings.ingestion_sort,
+        )
     except IngestionCycleError as error:
         logger.error("ingestion_phase_failed", ts=datetime.now(tz=UTC).isoformat(), error=str(error))
         return

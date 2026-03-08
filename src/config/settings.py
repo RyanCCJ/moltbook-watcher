@@ -3,8 +3,12 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+IngestionTime = Literal["hour", "day", "week", "month", "all"]
+IngestionSort = Literal["hot", "new", "top", "rising"]
+PublishModeSetting = Literal["manual-approval", "semi-auto"]
 
 
 class Settings(BaseSettings):
@@ -31,8 +35,13 @@ class Settings(BaseSettings):
     telegram_daily_summary_hour: int = 22
     telegram_daily_summary_timezone: str = "UTC"
 
-    publish_mode: Literal["manual-approval", "low-risk-auto"] = "manual-approval"
+    publish_mode: PublishModeSetting = "manual-approval"
     max_publish_per_day: int = 5
+    ingestion_time: IngestionTime = "hour"
+    ingestion_limit: int = Field(default=20, ge=1, le=200)
+    ingestion_sort: IngestionSort = "top"
+    review_min_score: float = Field(default=3.5, ge=0.0, le=5.0)
+    auto_publish_min_score: float = Field(default=4.0, ge=0.0, le=5.0)
 
     ingestion_interval_minutes: int = 60
     publish_poll_minutes: int = 5

@@ -56,13 +56,13 @@ async def test_publish_mode_pause_and_jobs_endpoints_follow_contract() -> None:
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         mode_response = await client.put(
             "/publishing/mode",
-            json={"mode": "low-risk-auto", "reason": "test"},
+            json={"mode": "semi-auto", "reason": "test"},
         )
         pause_response = await client.post("/publishing/pause")
         jobs_response = await client.get("/publish-jobs", params={"status": "scheduled"})
 
     assert mode_response.status_code == 200
-    assert mode_response.json()["mode"] == "low-risk-auto"
+    assert mode_response.json()["mode"] == "semi-auto"
 
     assert pause_response.status_code == 202
 

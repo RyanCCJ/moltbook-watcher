@@ -32,13 +32,13 @@ class PublishJobStatus(StrEnum):
 
 class PublishMode(StrEnum):
     MANUAL_APPROVAL = "manual-approval"
-    LOW_RISK_AUTO = "low-risk-auto"
+    SEMI_AUTO = "semi-auto"
 
 
 _ALLOWED_CANDIDATE_TRANSITIONS: dict[CandidateStatus, set[CandidateStatus]] = {
     CandidateStatus.SEEN: {CandidateStatus.SCORED},
-    CandidateStatus.SCORED: {CandidateStatus.QUEUED},
-    CandidateStatus.QUEUED: {CandidateStatus.REVIEWED, CandidateStatus.ARCHIVED},
+    CandidateStatus.SCORED: {CandidateStatus.QUEUED, CandidateStatus.ARCHIVED},
+    CandidateStatus.QUEUED: {CandidateStatus.REVIEWED, CandidateStatus.ARCHIVED, CandidateStatus.APPROVED},
     CandidateStatus.REVIEWED: {CandidateStatus.APPROVED, CandidateStatus.REJECTED, CandidateStatus.ARCHIVED},
     CandidateStatus.APPROVED: {CandidateStatus.SCHEDULED},
     CandidateStatus.SCHEDULED: {CandidateStatus.PUBLISHED},

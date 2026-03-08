@@ -118,6 +118,33 @@ async def test_push_pending_items_sends_one_message_per_item() -> None:
     assert telegram_client.sent_messages[0][2]["inline_keyboard"][0][0]["callback_data"] == "approve:one"
 
 
+def test_format_ingestion_digest_includes_threshold_bands_and_pending_count() -> None:
+    service = TelegramService(_StubTelegramClient(), "chat-1")
+
+    message = service.format_ingestion_digest(
+        fetched_count=12,
+        persisted_count=8,
+        filtered_duplicate_count=4,
+        archived_count=3,
+        score_breakdown={"auto_publish": 2, "review_queue": 3, "archived": 3},
+        risk_breakdown={"low": 5, "medium": 2, "high": 1},
+        auto_publish_count=2,
+        auto_publish_label="would qualify",
+        pending_total=11,
+        review_min_score=3.5,
+        auto_publish_min_score=4.0,
+    )
+
+    assert "Ingestion summary" in message
+    assert "⭐ &gt;= 4.0: 2 posts" in message
+    assert "✅ &gt;= 3.5: 3 posts (queued)" in message
+    assert "📦 &lt; 3.5: 3 posts (archived)" in message
+    assert "Risk: Low 5 | Medium 2 | High 1" in message
+    assert "Auto-publish: 2 would qualify" in message
+    assert "Pending review: 11 total" in message
+    assert message.endswith("/pending to review")
+
+
 @pytest.mark.asyncio
 async def test_update_message_with_decision_appends_decision_and_removes_keyboard() -> None:
     telegram_client = _StubTelegramClient()

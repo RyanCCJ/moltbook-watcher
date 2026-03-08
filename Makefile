@@ -13,7 +13,7 @@ lint:
 	uv run ruff check .
 
 reset:
-	uv run python scripts/reset_state.py --target all --yes
+	uv run python scripts/reset_state.py --yes
 
 ops-help:
 	uv run python scripts/ops_cli.py --help

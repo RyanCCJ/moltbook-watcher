@@ -24,12 +24,16 @@ This document explains:
    - fetch top comments for each new post (`GET /posts/{id}/comments?sort=top&limit=5`)
    - deduplicate
    - score with Ollama (post + top comments context)
-   - write `candidate_posts` + `score_cards`
-   - candidate status: `seen -> scored -> queued`
+   - write `candidate_posts` + `score_cards.route_decision`
+   - candidate status:
+     - `seen -> scored -> archived` when `final_score < REVIEW_MIN_SCORE`
+     - `seen -> scored -> queued` when `final_score >= REVIEW_MIN_SCORE`
+     - `seen -> scored -> queued -> approved` when semi-auto mode fast-tracks the post
 2. Review build (same ingestion cycle)
-   - create `review_items` for queued candidates not yet reviewed
+   - create `review_items` for queued and auto-approved candidates that do not already have one
    - snapshot top comments and optional translated comments
    - generate `threads_draft` for high-scoring candidates
+   - auto-approved items are stored with `decision=approved` and `reviewed_by=semi-auto`
 3. Review action (`/review-items/{id}/decision`)
    - `approved` / `rejected` / `archived`
    - archived items created by `archive-worker` can later be recalled back to `queued`
@@ -67,12 +71,15 @@ Look at:
 Use:
 - `scripts/reset_state.py`
 
-It resets this service's known PostgreSQL tables.
+It resets this service's known PostgreSQL tables only.
+There is no Redis reset path anymore because Redis has been removed from the runtime.
 
 ### 4.1 Reset PostgreSQL tables only
 
 ```bash
-uv run python scripts/reset_state.py --target db --yes
+uv run python scripts/reset_state.py --yes
+# or simply:
+make reset
 ```
 
 ## 5. Manual reset (advanced)
@@ -105,3 +112,7 @@ uv run python scripts/migrate.py
 uv run python scripts/ops_cli.py ingest --time hour --sort top --limit 1
 uv run python scripts/ops_cli.py review-list --status pending --limit 10
 ```
+
+Expected after reset:
+- all pipeline tables are empty
+- the next ingestion run behaves like a fresh bootstrap for dedup and review queue state

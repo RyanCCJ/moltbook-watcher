@@ -76,7 +76,7 @@ class FakeScoringService:
             engagement=3.5,
             risk=1,
             content_score=3.5,
-            final_score=3.3,
+            final_score=3.8,
             score_version="test-v1",
         )
 
@@ -100,10 +100,13 @@ async def test_ingestion_cycle_filters_duplicates_and_persists_scores() -> None:
 
     assert metrics.fetched_count == 4
     assert metrics.persisted_count == 3
+    assert metrics.scored_count == 3
+    assert metrics.archived_count == 0
     assert metrics.filtered_duplicate_count == 1
     assert len(candidates) == 3
     assert len(scores) == 3
     assert all(candidate.status == "queued" for candidate in candidates)
+    assert all(score.route_decision == "review_queue" for score in scores)
 
     by_source_post_id = {candidate.source_post_id: candidate for candidate in candidates}
     assert by_source_post_id["1"].top_comments_snapshot == [

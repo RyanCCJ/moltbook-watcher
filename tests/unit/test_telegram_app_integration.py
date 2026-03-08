@@ -39,6 +39,12 @@ async def test_create_app_registers_and_closes_telegram_client(monkeypatch) -> N
             telegram_bot_token="bot-token",
             telegram_chat_id="12345",
             telegram_webhook_url="https://example.com/telegram/webhook",
+            publish_mode="manual-approval",
+            ingestion_time="hour",
+            ingestion_sort="top",
+            ingestion_limit=20,
+            review_min_score=3.5,
+            auto_publish_min_score=4.0,
         ),
     )
     monkeypatch.setattr(app_module, "TelegramClient", build_client)

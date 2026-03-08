@@ -104,8 +104,8 @@ async def test_telegram_ingest_command_sends_follow_up(monkeypatch) -> None:
     app, _, telegram_client, _ = await _build_app_with_telegram()
     created_coroutines: list = []
 
-    async def fake_ingestion(*, time: str = "hour", sort: str = "top", limit: int = 100) -> dict[str, int | str]:
-        assert (time, sort, limit) == ("hour", "top", 100)
+    async def fake_ingestion(*, time: str = "hour", sort: str = "top", limit: int = 20) -> dict[str, int | str]:
+        assert (time, sort, limit) == ("hour", "top", 20)
         return {
             "time": time,
             "sort": sort,
@@ -133,8 +133,7 @@ async def test_telegram_ingest_command_sends_follow_up(monkeypatch) -> None:
     assert response.status_code == 200
     assert "Ingestion started…" in telegram_client.sent_messages[0][1]
     assert "Time: hour" in telegram_client.sent_messages[0][1]
-    assert "Ingestion finished." in telegram_client.sent_messages[1][1]
-    assert "Time: hour" in telegram_client.sent_messages[1][1]
+    assert "Limit: 20" in telegram_client.sent_messages[0][1]
 
 
 @pytest.mark.asyncio
@@ -142,7 +141,7 @@ async def test_telegram_ingest_command_accepts_any_order_arguments(monkeypatch) 
     app, _, telegram_client, _ = await _build_app_with_telegram()
     created_coroutines: list = []
 
-    async def fake_ingestion(*, time: str = "hour", sort: str = "top", limit: int = 100) -> dict[str, int | str]:
+    async def fake_ingestion(*, time: str = "hour", sort: str = "top", limit: int = 20) -> dict[str, int | str]:
         assert (time, sort, limit) == ("month", "new", 20)
         return {
             "time": time,
@@ -172,7 +171,6 @@ async def test_telegram_ingest_command_accepts_any_order_arguments(monkeypatch) 
     assert "Time: month" in telegram_client.sent_messages[0][1]
     assert "Sort: new" in telegram_client.sent_messages[0][1]
     assert "Limit: 20" in telegram_client.sent_messages[0][1]
-    assert "Time: month" in telegram_client.sent_messages[1][1]
 
 
 @pytest.mark.asyncio

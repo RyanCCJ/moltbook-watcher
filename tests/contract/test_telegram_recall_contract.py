@@ -54,6 +54,9 @@ async def _build_app_with_telegram() -> tuple[object, async_sessionmaker, _StubT
     app.state.settings = SimpleNamespace(
         telegram_bot_token="test-telegram-token",
         telegram_chat_id="12345",
+        ingestion_time="hour",
+        ingestion_sort="top",
+        ingestion_limit=20,
     )
     app.state.telegram_client = telegram_client
     app.state.telegram_service = TelegramService(telegram_client, "12345")

@@ -51,7 +51,21 @@ class ReviewItemRepository:
         top_comments_translated: list | None = None,
         threads_draft: str = "",
         follow_up_rationale: str | None = None,
+        decision: str = ReviewDecision.PENDING.value,
+        reviewed_by: str | None = None,
+        reviewed_at: datetime | None = None,
     ) -> ReviewItem:
+        if decision not in {
+            ReviewDecision.PENDING.value,
+            ReviewDecision.APPROVED.value,
+            ReviewDecision.REJECTED.value,
+            ReviewDecision.ARCHIVED.value,
+        }:
+            raise ValueError("Invalid decision")
+
+        if decision != ReviewDecision.PENDING.value and reviewed_at is None:
+            reviewed_at = datetime.now(tz=UTC)
+
         review_item = ReviewItem(
             candidate_post_id=candidate_post_id,
             english_draft=english_draft,
@@ -61,7 +75,9 @@ class ReviewItemRepository:
             top_comments_translated=top_comments_translated or [],
             threads_draft=threads_draft,
             follow_up_rationale=follow_up_rationale,
-            decision=ReviewDecision.PENDING.value,
+            decision=decision,
+            reviewed_by=reviewed_by,
+            reviewed_at=reviewed_at,
         )
         session.add(review_item)
         await session.flush()

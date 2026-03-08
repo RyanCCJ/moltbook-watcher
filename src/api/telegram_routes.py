@@ -23,9 +23,6 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/telegram", tags=["telegram"])
 _INGEST_TIME_OPTIONS = {"hour", "day", "week", "month", "all"}
 _INGEST_SORT_OPTIONS = {"hot", "new", "top", "rising"}
-_DEFAULT_INGEST_TIME = "hour"
-_DEFAULT_INGEST_SORT = "top"
-_DEFAULT_INGEST_LIMIT = 100
 
 
 @router.post("/webhook")
@@ -319,6 +316,7 @@ async def _handle_command(
     telegram_service: TelegramService,
     telegram_client: TelegramClient,
 ) -> None:
+    settings = _get_app_settings(request)
     parts = command_text.split()
     command = parts[0]
     arguments = parts[1:]
@@ -348,7 +346,7 @@ async def _handle_command(
 
     if command == "/ingest":
         try:
-            ingest_options = _parse_ingest_arguments(arguments)
+            ingest_options = _parse_ingest_arguments(arguments, settings=settings)
         except ValueError as error:
             await telegram_client.send_message(str(chat_id), str(error))
             return
@@ -432,10 +430,10 @@ async def _handle_cancel(
     await telegram_client.send_message(str(chat_id), message)
 
 
-def _parse_ingest_arguments(arguments: list[str]) -> dict[str, str | int]:
-    time = _DEFAULT_INGEST_TIME
-    sort = _DEFAULT_INGEST_SORT
-    limit = _DEFAULT_INGEST_LIMIT
+def _parse_ingest_arguments(arguments: list[str], *, settings: Settings) -> dict[str, str | int]:
+    time = settings.ingestion_time
+    sort = settings.ingestion_sort
+    limit = settings.ingestion_limit
     seen_time = False
     seen_sort = False
     seen_limit = False
@@ -482,23 +480,9 @@ async def _run_ingestion_follow_up(
     limit: int,
 ) -> None:
     try:
-        metrics = await run_ingestion_once(time=time, sort=sort, limit=limit)
+        await run_ingestion_once(time=time, sort=sort, limit=limit)
     except Exception as error:
         await telegram_client.send_message(chat_id, f"Ingestion failed: {error}")
-        return
-    await telegram_client.send_message(
-        chat_id,
-        (
-            "Ingestion finished.\n"
-            f"Time: {metrics.get('time', 'hour')}\n"
-            f"Sort: {metrics.get('sort', 'top')}\n"
-            f"Limit: {metrics.get('limit', 100)}\n"
-            f"Fetched: {metrics.get('fetched_count', 0)}\n"
-            f"Persisted: {metrics.get('persisted_count', 0)}\n"
-            f"Filtered duplicates: {metrics.get('filtered_duplicate_count', 0)}\n"
-            f"Review items created: {metrics.get('review_items_created', 0)}"
-        ),
-    )
 
 
 async def _run_publish_follow_up(chat_id: str, telegram_client: TelegramClient) -> None:

@@ -19,6 +19,43 @@ class TelegramService:
         self._pending_edits: dict[int, str] = {}
         self._pending_comment_context: dict[int, tuple[int, str]] = {}
 
+    def format_ingestion_digest(
+        self,
+        *,
+        fetched_count: int,
+        persisted_count: int,
+        filtered_duplicate_count: int,
+        archived_count: int,
+        score_breakdown: dict[str, int],
+        risk_breakdown: dict[str, int],
+        auto_publish_count: int,
+        auto_publish_label: str,
+        pending_total: int,
+        review_min_score: float,
+        auto_publish_min_score: float,
+    ) -> str:
+        risk_parts = [
+            f"Low {risk_breakdown.get('low', 0)}",
+            f"Medium {risk_breakdown.get('medium', 0)}",
+            f"High {risk_breakdown.get('high', 0)}",
+        ]
+        lines = [
+            "<b>Ingestion summary</b>",
+            f"Fetched: {fetched_count} | New: {persisted_count} | Filtered: {filtered_duplicate_count}",
+            "",
+            "<b>Score breakdown</b>",
+            f"⭐ &gt;= {auto_publish_min_score}: {score_breakdown.get('auto_publish', 0)} posts",
+            f"✅ &gt;= {review_min_score}: {score_breakdown.get('review_queue', 0)} posts (queued)",
+            f"📦 &lt; {review_min_score}: {archived_count} posts (archived)",
+            "",
+            f"Risk: {' | '.join(risk_parts)}",
+            f"Auto-publish: {auto_publish_count} {escape(auto_publish_label)}",
+            f"Pending review: {pending_total} total",
+            "",
+            "/pending to review",
+        ]
+        return "\n".join(lines)
+
     def format_review_message(self, review_item_data: dict[str, Any]) -> str:
         review_item_id = str(review_item_data.get("id", "unknown"))
         content = self._select_content(review_item_data)

@@ -5,25 +5,17 @@ class RoutingService:
     def __init__(
         self,
         *,
-        fast_track_threshold: float = 4.2,
+        fast_track_min_score: float = 4.0,
+        fast_track_max_risk: int = 1,
         high_risk_threshold: int = 4,
-        min_follow_up_novelty_delta: float = 1.0,
-        follow_up_cooldown_days: int = 7,
     ) -> None:
-        self.fast_track_threshold = fast_track_threshold
+        self.fast_track_min_score = fast_track_min_score
+        self.fast_track_max_risk = fast_track_max_risk
         self.high_risk_threshold = high_risk_threshold
-        self.min_follow_up_novelty_delta = min_follow_up_novelty_delta
-        self.follow_up_cooldown_days = follow_up_cooldown_days
 
     def route_candidate(self, *, final_score: float, risk_score: int) -> str:
         if risk_score >= self.high_risk_threshold:
             return "risk_priority"
-        if final_score >= self.fast_track_threshold and risk_score <= 1:
+        if final_score >= self.fast_track_min_score and risk_score <= self.fast_track_max_risk:
             return "fast_track"
         return "review_queue"
-
-    def is_follow_up_allowed(self, *, novelty_delta_score: float, days_since_previous_publish: int) -> bool:
-        return (
-            novelty_delta_score >= self.min_follow_up_novelty_delta
-            and days_since_previous_publish >= self.follow_up_cooldown_days
-        )

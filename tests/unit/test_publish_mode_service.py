@@ -6,7 +6,7 @@ def test_publish_mode_switching_and_gating_rules() -> None:
 
     assert not control.can_auto_publish(risk_score=1)
 
-    control.switch_mode("low-risk-auto", reason="night automation")
+    control.switch_mode("semi-auto", reason="night automation")
     assert control.can_auto_publish(risk_score=1)
     assert not control.can_auto_publish(risk_score=3)
 
