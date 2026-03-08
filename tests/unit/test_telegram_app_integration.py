@@ -33,7 +33,6 @@ async def test_create_app_registers_and_closes_telegram_client(monkeypatch) -> N
         "get_settings",
         lambda: SimpleNamespace(
             log_level="INFO",
-            redis_url="memory://queue",
             app_env="test",
             database_url="sqlite+aiosqlite:///:memory:",
             telegram_enabled=True,

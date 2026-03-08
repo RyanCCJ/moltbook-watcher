@@ -14,7 +14,6 @@ For Ollama startup/config and Threads credential setup, see:
 
 Optional for full runtime mode:
 - PostgreSQL
-- Redis
 
 ## 2. Install Dependencies
 
@@ -38,17 +37,15 @@ After changing `.env`, fully restart running API/worker processes.
 `uvicorn --reload` does not automatically reload only because `.env` changed.
 
 Important:
-- `.env.example` is configured for PostgreSQL + Redis.
-- If you do not run PostgreSQL/Redis locally, switch to minimal values:
+- `.env.example` is configured for PostgreSQL by default.
+- If you do not run PostgreSQL locally, switch to minimal values:
 
 ```env
 DATABASE_URL=sqlite+aiosqlite:///./moltbook.db
-REDIS_URL=memory://queue
 ```
 
 Important variables:
 - `DATABASE_URL`
-- `REDIS_URL`
 - `MOLTBOOK_API_BASE_URL`
 - `MOLTBOOK_API_TOKEN`
 - `TRANSLATION_LANGUAGE` (empty by default, skips translation)
@@ -89,15 +86,13 @@ curl -X POST https://www.moltbook.com/api/v1/agents/register \
 
 Use defaults from `src/config/settings.py`:
 - SQLite: `sqlite+aiosqlite:///./moltbook.db`
-- In-memory queue: `memory://queue`
 
 This is the fastest way to run API and tests locally.
 
 ### B. Full integration mode
 
-Use `.env.example` values and run PostgreSQL + Redis locally, then keep:
+Use `.env.example` values and run PostgreSQL locally, then keep:
 - `DATABASE_URL=postgresql+asyncpg://...`
-- `REDIS_URL=redis://...`
 
 ### C. Shared Kubernetes PostgreSQL with dedicated `moltbook` account
 
@@ -131,7 +126,6 @@ SQL
 
 ```env
 DATABASE_URL=postgresql+asyncpg://moltbook_user:password@<POSTGRES_SERVICE_IP>:5432/moltbook
-REDIS_URL=redis://<REDIS_SERVICE_IP>:6379/0
 ```
 
 4. Restart API/worker so new `.env` is applied.
@@ -167,7 +161,7 @@ curl http://127.0.0.1:8000/health/live
 
 Expected:
 - `/health/live` returns `{"status":"ok"}`
-- `/health` returns `status: ok` when DB and queue are reachable
+- `/health` returns `status: ok` when the database is reachable
 
 ## 8. User Story Smoke Test (US1 -> US2 -> US3)
 
@@ -251,6 +245,39 @@ One-shot smoke (ingest -> approve first pending -> publish):
 uv run python scripts/ops_cli.py smoke --approve --limit 1
 ```
 
+### 8.5 Verify daily archive + Telegram recall
+
+This change adds automatic archive-before-summary plus Telegram recall for
+high-score items.
+
+1. Configure Telegram:
+
+```env
+TELEGRAM_BOT_TOKEN=<token>
+TELEGRAM_CHAT_ID=<chat_id>
+TELEGRAM_WEBHOOK_URL=https://<host>/telegram/webhook
+TELEGRAM_DAILY_SUMMARY_HOUR=22
+TELEGRAM_DAILY_SUMMARY_TIMEZONE=UTC
+```
+
+2. Create at least one old queued review item:
+   - ingest data normally, then update one candidate's `captured_at` to more than 14 days ago in your local DB, or seed a fixture in a test DB
+   - make sure the item is still `pending` / `queued`
+   - give it a score `>= 4.0` if you want it to appear in the recall section
+
+3. Trigger the summary cycle:
+
+```bash
+uv run python -c "import asyncio; from src.workers.scheduler import run_daily_summary_cycle; asyncio.run(run_daily_summary_cycle())"
+```
+
+4. Verify results:
+   - the Telegram summary includes `Auto-archived: N`
+   - high-score archived items appear in the summary when present
+   - `/recall` lists only auto-archived high-score items
+   - tapping `Recall` changes the item back to `pending` / `queued`
+   - a second tap returns `Item already recalled.`
+
 ## 9. Run Tests
 
 Run all tests:
@@ -287,13 +314,17 @@ uv run --extra dev pytest tests/unit
 
 ## 11. Troubleshooting
 
-- `database/queue degraded` in `/health`:
-  - Verify `DATABASE_URL` and `REDIS_URL`
-  - Confirm PostgreSQL/Redis are running (full mode)
+- `database degraded` in `/health`:
+  - Verify `DATABASE_URL`
+  - Confirm PostgreSQL is running (full mode)
 - `persisted_count=0` after ingestion:
   - Data may be deduplicated against existing `candidate_posts`
   - Retry with a different `time`/`sort` or a fresh DB for smoke testing
   - Ingestion passes the selected upstream `time` filter directly to the Moltbook posts API
+- `/recall` shows no items:
+  - Only items archived by `archive-worker` are eligible
+  - Only items with `final_score >= 4.0` appear
+  - Manually rejected or manually archived items are excluded
 - Publish flow appears inactive:
   - Check if publishing was paused via `POST /publishing/pause`
 - FastAPI deprecation warnings about `on_event`:

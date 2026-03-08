@@ -215,6 +215,6 @@ launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.moltbook.worker.plist
   - Replace `<PROJECT_DIR>`, `<SERVICE_USER>`, `<LOG_DIR>`.
   - Start services with `systemctl` or `launchctl`.
 - Keep `.env` complete and consistent before enabling services.
-- Validate DB/queue readiness with `/health` after startup.
+- Validate database readiness with `/health` after startup.
 - Rotate tokens and never commit `.env`.
 - Use `tmux` only for ad-hoc debugging, not as the main supervisor.

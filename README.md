@@ -7,6 +7,8 @@ Current pipeline:
 - Fetch top comments for each post
 - Deduplicate and score with Ollama
 - Build a review queue
+- Auto-archive stale queued items before the daily Telegram summary
+- Let operators recall high-score auto-archived items from Telegram with `/recall`
 - Let operators approve/reject before publishing
 - Ingestion and review run in separate DB transactions (review failure does not roll back ingested candidates)
 
@@ -23,7 +25,6 @@ Recommended minimal local mode:
 
 ```env
 DATABASE_URL=sqlite+aiosqlite:///./moltbook.db
-REDIS_URL=memory://queue
 MOLTBOOK_API_BASE_URL=https://www.moltbook.com/api/v1
 MOLTBOOK_API_TOKEN=<your_token>
 TRANSLATION_LANGUAGE=
@@ -79,6 +80,14 @@ uv run python scripts/ops_cli.py ingest --help
 uv run --extra dev pytest
 uv run --extra dev ruff check .
 ```
+
+## Verify
+
+- API health: `curl http://127.0.0.1:8000/health`
+- Ingest once: `uv run python scripts/ops_cli.py ingest --time hour --sort top --limit 1`
+- Review queue: `uv run python scripts/ops_cli.py review-list --status pending --limit 10`
+- Telegram flow: send `/health`, `/pending`, `/help`, `/stats`, and `/recall`
+- Archive/recall flow: see `docs/service-setup-run-test.md`
 
 ## Troubleshooting
 

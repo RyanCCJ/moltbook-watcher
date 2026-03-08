@@ -202,7 +202,6 @@ async def test_telegram_features_disabled_when_token_empty(monkeypatch) -> None:
         "get_settings",
         lambda: SimpleNamespace(
             log_level="INFO",
-            redis_url="memory://queue",
             app_env="test",
             database_url="sqlite+aiosqlite:///:memory:",
             telegram_enabled=False,

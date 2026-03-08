@@ -98,6 +98,14 @@ def test_build_review_inline_keyboard_uses_action_id_callback_data() -> None:
     }
 
 
+def test_build_recall_inline_keyboard_uses_recall_callback_data() -> None:
+    service = TelegramService(_StubTelegramClient(), "chat-1")
+
+    keyboard = service.build_recall_inline_keyboard("abc-123")
+
+    assert keyboard == {"inline_keyboard": [[{"text": "Recall", "callback_data": "recall:abc-123"}]]}
+
+
 @pytest.mark.asyncio
 async def test_push_pending_items_sends_one_message_per_item() -> None:
     telegram_client = _StubTelegramClient()
@@ -188,7 +196,7 @@ def test_build_review_detail_messages_orders_sections_with_threads_last() -> Non
     assert messages[-1]["reply_markup"]["inline_keyboard"][0][0]["callback_data"] == "approve:review-1"
 
 
-def test_format_stats_health_and_help_messages() -> None:
+def test_format_stats_health_help_and_recall_messages() -> None:
     service = TelegramService(_StubTelegramClient(), "chat-1")
 
     stats_message = service.format_stats_message(
@@ -197,8 +205,10 @@ def test_format_stats_health_and_help_messages() -> None:
             "approvedTodayCount": 2,
             "rejectedTodayCount": 1,
             "publishedTodayCount": 3,
+            "archivedCount": 4,
             "ingestedTodayCount": 8,
             "failedJobCount": 1,
+            "highScoreRecalls": [{"sourceUrl": "https://example.com/post/9", "finalScore": 4.8}],
             "topPendingItems": [_review_item(threadsDraft="One"), _review_item(threadsDraft="Two")],
         }
     )
@@ -206,18 +216,41 @@ def test_format_stats_health_and_help_messages() -> None:
         {
             "status": "degraded",
             "database": True,
-            "queue": False,
             "webhook": True,
-            "errors": ["queue timeout"],
+            "errors": ["database timeout"],
         }
     )
     help_message = service.format_help_message()
+    recall_message = service.format_recall_list(
+        [
+            {
+                "reviewItemId": "review-9",
+                "title": "Archived title. Extra sentence.",
+                "sourceUrl": "https://example.com/post/9",
+                "finalScore": 4.8,
+            }
+        ]
+    )
 
     assert "Pending: 5" in stats_message
+    assert "Auto-archived: 4" in stats_message
     assert "Failed jobs today: 1" in stats_message
+    assert "https://example.com/post/9" in stats_message
     assert "- One (8.7)" in stats_message
     assert "Status: degraded" in health_message
-    assert "Queue: failed" in health_message
+    assert "Database: ok" in health_message
+    assert "Webhook: ok" in health_message
+    assert "Queue:" not in health_message
     assert "/review &lt;number&gt; - Show full details for one pending item" in help_message
     assert "/ingest [time] [sort] [limit] - Start ingestion; tokens can be in any order" in help_message
+    assert "/recall - Show high-score archived items you can recall" in help_message
     assert "/cancel - Cancel the current comment or edit flow" in help_message
+    assert "<b>Recallable items</b>" in recall_message
+    assert "1. Archived title." in recall_message
+    assert "Score: 4.8" in recall_message
+
+
+def test_format_recall_list_returns_empty_state_message() -> None:
+    service = TelegramService(_StubTelegramClient(), "chat-1")
+
+    assert service.format_recall_list([]) == "No recallable items."

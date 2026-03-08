@@ -44,7 +44,7 @@ _ALLOWED_CANDIDATE_TRANSITIONS: dict[CandidateStatus, set[CandidateStatus]] = {
     CandidateStatus.SCHEDULED: {CandidateStatus.PUBLISHED},
     CandidateStatus.PUBLISHED: set(),
     CandidateStatus.REJECTED: set(),
-    CandidateStatus.ARCHIVED: set(),
+    CandidateStatus.ARCHIVED: {CandidateStatus.QUEUED},
 }
 
 

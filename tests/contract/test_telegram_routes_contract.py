@@ -13,7 +13,6 @@ from src.models.base import Base, get_session
 from src.models.candidate_post import CandidatePostRepository
 from src.models.review_item import ReviewItem, ReviewItemRepository
 from src.models.score_card import ScoreCardRepository
-from src.services.queue_client import QueueClient
 from src.services.telegram_service import TelegramService
 
 
@@ -114,7 +113,6 @@ async def _build_app_with_telegram() -> tuple[object, async_sessionmaker, _StubT
     app.state.telegram_client = telegram_client
     app.state.telegram_service = TelegramService(telegram_client, "12345")
     app.state.telegram_webhook_registered = True
-    app.state.queue_client = QueueClient("memory://queue")
 
     return app, async_session, telegram_client, review_item.id
 

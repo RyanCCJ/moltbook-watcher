@@ -48,7 +48,12 @@ async def load_review_item_payloads(
     return items
 
 
-async def build_stats_payload(session: AsyncSession) -> dict[str, Any]:
+async def build_stats_payload(
+    session: AsyncSession,
+    *,
+    archived_count: int = 0,
+    high_score_recalls: list[dict[str, object]] | None = None,
+) -> dict[str, Any]:
     start_of_day = datetime.now(tz=UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     pending_count = await session.scalar(
         select(func.count()).select_from(ReviewItem).where(ReviewItem.decision == ReviewDecision.PENDING.value)
@@ -77,5 +82,7 @@ async def build_stats_payload(session: AsyncSession) -> dict[str, Any]:
         "approvedTodayCount": approved_today_count or 0,
         "rejectedTodayCount": rejected_today_count or 0,
         "publishedTodayCount": published_today_count or 0,
+        "archivedCount": archived_count,
+        "highScoreRecalls": high_score_recalls or [],
         "topPendingItems": top_pending[:3],
     }

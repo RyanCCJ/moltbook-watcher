@@ -14,9 +14,9 @@ from src.models.base import check_db_health, get_session
 from src.models.lifecycle import ReviewDecision
 from src.models.review_item import ReviewItemRepository
 from src.services.logging_service import get_logger
-from src.services.queue_client import QueueClient
 from src.services.telegram_reporting import build_stats_payload, load_review_item_payloads
 from src.services.telegram_service import TelegramService
+from src.workers.archive_worker import ArchiveWorker
 from src.workers.runtime import run_ingestion_once, run_publish_once
 
 logger = get_logger(__name__)
@@ -137,6 +137,17 @@ async def _handle_callback_query(
         telegram_service.set_pending_edit(int(chat_id), review_item_id)
         await telegram_client.send_message(chat_id, "Send me the new draft text:")
         await telegram_client.answer_callback_query(callback_query_id, text="Send updated draft")
+        return
+    if action == "recall":
+        outcome = await ArchiveWorker().recall_item(session, review_item_id)
+        if outcome == "recalled":
+            await session.commit()
+            await telegram_client.answer_callback_query(callback_query_id, text="Item recalled.")
+            return
+        if outcome == "already_recalled":
+            await telegram_client.answer_callback_query(callback_query_id, text="Item already recalled.")
+            return
+        await telegram_client.answer_callback_query(callback_query_id, text="This item cannot be recalled.")
         return
 
     await telegram_client.answer_callback_query(callback_query_id, text="Unknown action")
@@ -371,14 +382,29 @@ async def _handle_command(
         await telegram_client.send_message(str(chat_id), telegram_service.format_stats_message(stats))
         return
 
+    if command == "/recall":
+        recall_items = await ArchiveWorker().build_high_score_recall(session, min_score=4.0)
+        if not recall_items:
+            await telegram_client.send_message(str(chat_id), telegram_service.format_recall_list(recall_items))
+            return
+        recall_keyboard = {
+            "inline_keyboard": [
+                telegram_service.build_recall_inline_keyboard(str(item["reviewItemId"]))["inline_keyboard"][0]
+                for item in recall_items
+            ]
+        }
+        await telegram_client.send_message(
+            str(chat_id),
+            telegram_service.format_recall_list(recall_items),
+            reply_markup=recall_keyboard,
+        )
+        return
+
     if command == "/health":
-        queue_client: QueueClient = request.app.state.queue_client
         db_ok = await check_db_health(session)
-        queue_ok = await queue_client.ping()
         health_data = {
-            "status": "ok" if db_ok and queue_ok else "degraded",
+            "status": "ok" if db_ok else "degraded",
             "database": db_ok,
-            "queue": queue_ok,
             "webhook": bool(getattr(request.app.state, "telegram_webhook_registered", False)),
         }
         await telegram_client.send_message(str(chat_id), telegram_service.format_health_message(health_data))

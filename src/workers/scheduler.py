@@ -11,6 +11,7 @@ from src.models.base import AsyncSessionLocal
 from src.services.logging_service import configure_logging, get_logger
 from src.services.telegram_reporting import build_stats_payload
 from src.services.telegram_service import TelegramService
+from src.workers.archive_worker import ArchiveWorker
 from src.workers.runtime import (
     IngestionCycleError,
     ReviewCycleError,
@@ -55,8 +56,16 @@ async def run_daily_summary_cycle() -> None:
     telegram_client = TelegramClient(settings.telegram_bot_token)
     telegram_service = TelegramService(telegram_client, settings.telegram_chat_id)
     try:
+        archive_worker = ArchiveWorker()
         async with AsyncSessionLocal() as session:
-            stats = await build_stats_payload(session)
+            archived_count = await archive_worker.archive_stale_review_items(session)
+            high_score_recalls = await archive_worker.build_todays_high_score_recall(session)
+            await session.commit()
+            stats = await build_stats_payload(
+                session,
+                archived_count=archived_count,
+                high_score_recalls=high_score_recalls,
+            )
         await telegram_client.send_message(
             settings.telegram_chat_id,
             telegram_service.format_stats_message(stats),

@@ -15,7 +15,6 @@ This document explains:
   - `published_post_records`
   - `follow_up_candidates`
   - `notification_events`
-- Redis (queue/cache runtime; optional in current flow)
 - Logs (stdout/file depending on your supervisor setup)
 
 ## 2. Pipeline data flow
@@ -33,19 +32,26 @@ This document explains:
    - generate `threads_draft` for high-scoring candidates
 3. Review action (`/review-items/{id}/decision`)
    - `approved` / `rejected` / `archived`
+   - archived items created by `archive-worker` can later be recalled back to `queued`
 4. Publish (`/ops/publish/run` or scheduler)
    - schedule approved candidates into `publish_jobs`
    - publish with `review_items.threads_draft` when available, otherwise fallback to raw content
    - write `published_post_records` on success
    - retries and terminal notification on failures
+5. Daily summary (`run_daily_summary_cycle` or scheduler)
+   - archive pending queued items older than 14 days
+   - include `Auto-archived: N` in the Telegram summary
+   - include today's high-score archived items in the summary
+6. Telegram recall (`/recall`)
+   - list high-score items auto-archived by `archive-worker`
+   - recall moves candidate status `archived -> queued`
+   - reset review decision `archived -> pending`
 
 ## 3. Safety rules before reset
 
 - Stop API and worker first.
 - Confirm your `.env` points to dedicated resources:
   - dedicated PostgreSQL database (recommended)
-  - dedicated Redis DB index (recommended, not DB 0)
-- Never use `FLUSHALL`.
 
 Check current runtime target quickly:
 
@@ -55,58 +61,18 @@ curl http://127.0.0.1:8000/health
 
 Look at:
 - `database_target`
-- `redis_target`
 
 ## 4. Safe reset script (recommended)
 
 Use:
 - `scripts/reset_state.py`
 
-It only resets this service's known PostgreSQL tables.  
-For Redis, it supports:
-- prefix delete (safer for shared Redis)
-- `FLUSHDB` on the configured DB index (blocked for DB 0 unless explicitly allowed)
+It resets this service's known PostgreSQL tables.
 
 ### 4.1 Reset PostgreSQL tables only
 
 ```bash
 uv run python scripts/reset_state.py --target db --yes
-```
-
-### 4.2 Reset Redis keys by prefix only
-
-```bash
-uv run python scripts/reset_state.py \
-  --target redis \
-  --redis-mode prefix \
-  --redis-prefix "moltbook:" \
-  --yes
-```
-
-### 4.3 Reset Redis DB index (only if that DB index is dedicated)
-
-```bash
-uv run python scripts/reset_state.py \
-  --target redis \
-  --redis-mode flushdb \
-  --yes
-```
-
-If your configured Redis index is `0`, script blocks by default.  
-Only bypass if you are absolutely sure DB 0 is dedicated:
-
-```bash
-uv run python scripts/reset_state.py \
-  --target redis \
-  --redis-mode flushdb \
-  --allow-redis-db0-flush \
-  --yes
-```
-
-### 4.4 Reset DB + Redis together
-
-```bash
-uv run python scripts/reset_state.py --target all --yes
 ```
 
 ## 5. Manual reset (advanced)
@@ -124,14 +90,6 @@ TRUNCATE TABLE
   candidate_posts
 RESTART IDENTITY CASCADE;
 ```
-
-### Redis (configured DB index only)
-
-```bash
-redis-cli -u "redis://<HOST>:<PORT>/<DB_INDEX>" FLUSHDB
-```
-
-Use only when that DB index is dedicated.
 
 ## 6. Validate after reset
 

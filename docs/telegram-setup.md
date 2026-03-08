@@ -93,8 +93,8 @@ In this model, Telegram reaches the Tailscale HTTPS endpoint, and Tailscale forw
 
 1. Start the API server with Telegram variables configured.
 2. Confirm the app registers the webhook on startup.
-3. Send `/health` to the bot and verify it responds with database, queue, and webhook status.
-4. Send `/pending` and `/help` to confirm command routing works.
+3. Send `/health` to the bot and verify it responds with database and webhook status.
+4. Send `/pending`, `/help`, and `/recall` to confirm command routing works.
 5. Trigger ingestion if needed:
 
 ```text
@@ -109,6 +109,13 @@ The `/ingest` command accepts `time`, `sort`, and `limit` tokens in any order.
 ```bash
 curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/getWebhookInfo"
 ```
+
+7. Verify archive + recall behavior:
+   - make sure at least one queued pending item is older than 14 days
+   - trigger the summary cycle or wait for the scheduled daily summary
+   - confirm the summary includes `Auto-archived: N`
+   - send `/recall` and verify eligible high-score archived items are listed
+   - press `Recall` and verify the bot replies with `Item recalled.`
 
 ## 6. Troubleshooting
 
@@ -128,6 +135,13 @@ curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/getWebhookInfo"
 
 ### Permission or connectivity errors
 
-- Confirm the database and Redis are healthy with `/health`.
+- Confirm the database is healthy with `/health`.
 - If using a reverse proxy, check that `/telegram/webhook` is forwarded unchanged.
 - If using Tailscale or private DNS, confirm the hostname resolves from the public internet if Telegram must reach it directly.
+
+### `/recall` does not show an expected item
+
+- The item must have been archived by `archive-worker`, not manually by an operator.
+- The item must still be in `archived` status.
+- The item must have `final_score >= 4.0`.
+- If it was already recalled once, pressing the button again returns `Item already recalled.`

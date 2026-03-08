@@ -53,6 +53,11 @@ class TelegramService:
             ]
         }
 
+    def build_recall_inline_keyboard(self, review_item_id: str) -> dict[str, Any]:
+        return {
+            "inline_keyboard": [[{"text": "Recall", "callback_data": f"recall:{review_item_id}"}]]
+        }
+
     async def push_pending_items(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         responses: list[dict[str, Any]] = []
         for item in items:
@@ -203,17 +208,26 @@ class TelegramService:
 
     def format_stats_message(self, stats_data: dict[str, Any]) -> str:
         top_pending = stats_data.get("topPendingItems") or []
+        high_score_recalls = stats_data.get("highScoreRecalls") or []
         lines = [
             "<b>Pipeline stats</b>",
             f"Pending: {stats_data.get('pendingCount', 0)}",
             f"Approved today: {stats_data.get('approvedTodayCount', 0)}",
             f"Rejected today: {stats_data.get('rejectedTodayCount', 0)}",
             f"Published today: {stats_data.get('publishedTodayCount', 0)}",
+            f"Auto-archived: {stats_data.get('archivedCount', 0)}",
         ]
         if "ingestedTodayCount" in stats_data:
             lines.append(f"Ingested today: {stats_data.get('ingestedTodayCount', 0)}")
         if "failedJobCount" in stats_data:
             lines.append(f"Failed jobs today: {stats_data.get('failedJobCount', 0)}")
+        if high_score_recalls:
+            lines.append("")
+            lines.append("<b>High-score recalls</b>")
+            for item in high_score_recalls:
+                source_url = escape(str(item.get("sourceUrl") or "-"), quote=True)
+                final_score = escape(str(item.get("finalScore") or "n/a"))
+                lines.append(f'- <a href="{source_url}">{source_url}</a> ({final_score})')
         if top_pending:
             lines.append("")
             lines.append("<b>Top pending</b>")
@@ -231,7 +245,6 @@ class TelegramService:
             "<b>System health</b>",
             f"Status: {escape(str(health_data.get('status', 'unknown')))}",
             f"Database: {self._format_boolean(health_data.get('database'))}",
-            f"Queue: {self._format_boolean(health_data.get('queue'))}",
         ]
         if "webhook" in health_data:
             lines.append(f"Webhook: {self._format_boolean(health_data.get('webhook'))}")
@@ -249,12 +262,31 @@ class TelegramService:
                 "/review &lt;number&gt; - Show full details for one pending item",
                 "/ingest [time] [sort] [limit] - Start ingestion; tokens can be in any order",
                 "/publish - Start one publish cycle",
+                "/recall - Show high-score archived items you can recall",
                 "/stats - Show pipeline stats",
                 "/health - Show system health",
                 "/help - Show this help message",
                 "/cancel - Cancel the current comment or edit flow",
             ]
         )
+
+    def format_recall_list(self, items: list[dict[str, Any]]) -> str:
+        if not items:
+            return "No recallable items."
+
+        lines = ["<b>Recallable items</b>"]
+        for index, item in enumerate(items, start=1):
+            title = self._truncate_line(self._extract_first_sentence(str(item.get("title") or "")), 80)
+            score = escape(str(item.get("finalScore") or "n/a"))
+            source_url = escape(str(item.get("sourceUrl") or "-"), quote=True)
+            lines.extend(
+                [
+                    f"{index}. {escape(title or '(no title)')}",
+                    f"   Score: {score}",
+                    f'   Source: <a href="{source_url}">{source_url}</a>',
+                ]
+            )
+        return "\n".join(lines)
 
     def _select_content(self, review_item_data: dict[str, Any]) -> str:
         for key in ("threadsDraft", "translatedContent", "draftContent"):
