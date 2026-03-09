@@ -299,6 +299,7 @@ class TelegramService:
                 "/review &lt;number&gt; - Show full details for one pending item",
                 "/ingest [time] [sort] [limit] - Start ingestion; tokens can be in any order",
                 "/publish - Start one publish cycle",
+                "/regenerate [number] - Regenerate empty translations or Threads drafts",
                 "/recall - Show high-score archived items you can recall",
                 "/stats - Show pipeline stats",
                 "/health - Show system health",

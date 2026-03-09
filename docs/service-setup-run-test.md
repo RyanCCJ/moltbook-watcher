@@ -48,6 +48,7 @@ Important variables:
 - `DATABASE_URL`
 - `MOLTBOOK_API_BASE_URL`
 - `MOLTBOOK_API_TOKEN`
+- `OLLAMA_TIMEOUT_SECONDS` (default `300`, shared by scoring and review generation)
 - `TRANSLATION_LANGUAGE` (empty by default, skips translation)
 - `THREADS_LANGUAGE` (default `en`, controls generated Threads draft language)
 - `THREADS_API_BASE_URL`
@@ -237,6 +238,7 @@ uv run python scripts/ops_cli.py review-list --status pending --limit 10
 uv run python scripts/ops_cli.py review-decide <REVIEW_ITEM_ID> --decision approved --reviewed-by operator
 uv run python scripts/ops_cli.py publish-run
 uv run python scripts/ops_cli.py publish-jobs
+uv run python scripts/ops_cli.py regenerate
 ```
 
 One-shot smoke (ingest -> approve first pending -> publish):
@@ -306,6 +308,7 @@ uv run --extra dev pytest tests/unit
 - `GET /health/live`
 - `POST /ops/ingestion/run` (supports `time`, `sort`, `limit`)
 - `POST /ops/publish/run`
+- `POST /ops/regenerate` (optional `review_item_id` query param)
 - `GET /review-items`
 - `POST /review-items/{reviewItemId}/decision`
 - `PUT /publishing/mode`
@@ -327,5 +330,10 @@ uv run --extra dev pytest tests/unit
   - Manually rejected or manually archived items are excluded
 - Publish flow appears inactive:
   - Check if publishing was paused via `POST /publishing/pause`
+- Empty translations or Threads drafts remain after ingestion:
+  - Increase `OLLAMA_TIMEOUT_SECONDS` if your local model is slow
+  - Run `uv run python scripts/ops_cli.py regenerate` for pending empty items
+  - Target one item with `uv run python scripts/ops_cli.py regenerate --id <REVIEW_ITEM_ID>` if you want a smaller retry
+  - You can also call `POST /ops/regenerate` directly from the API
 - FastAPI deprecation warnings about `on_event`:
   - Non-blocking for now; migration to lifespan handlers is a future cleanup

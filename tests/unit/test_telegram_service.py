@@ -270,6 +270,7 @@ def test_format_stats_health_help_and_recall_messages() -> None:
     assert "Queue:" not in health_message
     assert "/review &lt;number&gt; - Show full details for one pending item" in help_message
     assert "/ingest [time] [sort] [limit] - Start ingestion; tokens can be in any order" in help_message
+    assert "/regenerate [number] - Regenerate empty translations or Threads drafts" in help_message
     assert "/recall - Show high-score archived items you can recall" in help_message
     assert "/cancel - Cancel the current comment or edit flow" in help_message
     assert "<b>Recallable items</b>" in recall_message

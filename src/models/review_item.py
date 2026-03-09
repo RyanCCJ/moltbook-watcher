@@ -92,11 +92,13 @@ class ReviewItemRepository:
         session: AsyncSession,
         *,
         status: str | None = None,
-        limit: int = 10,
+        limit: int | None = 10,
     ) -> list[ReviewItem]:
-        statement = select(ReviewItem).order_by(ReviewItem.created_at.desc()).limit(limit)
+        statement = select(ReviewItem).order_by(ReviewItem.created_at.desc())
         if status:
             statement = statement.where(ReviewItem.decision == status)
+        if limit is not None:
+            statement = statement.limit(limit)
         return list((await session.scalars(statement)).all())
 
     async def decide(
@@ -153,6 +155,32 @@ class ReviewItemRepository:
             raise ValueError("Decision already submitted")
 
         review_item.threads_draft = threads_draft
+        session.add(review_item)
+        await session.flush()
+        return review_item
+
+    async def update_payload(
+        self,
+        session: AsyncSession,
+        *,
+        review_item_id: str,
+        chinese_translation_full: str | None = None,
+        top_comments_translated: list | None = None,
+        threads_draft: str | None = None,
+    ) -> ReviewItem:
+        review_item = await self.get(session, review_item_id)
+        if review_item is None:
+            raise ValueError("Review item not found")
+        if review_item.decision != ReviewDecision.PENDING.value:
+            raise ValueError("Decision already submitted")
+
+        if chinese_translation_full is not None:
+            review_item.chinese_translation_full = chinese_translation_full
+        if top_comments_translated is not None:
+            review_item.top_comments_translated = top_comments_translated
+        if threads_draft is not None:
+            review_item.threads_draft = threads_draft
+
         session.add(review_item)
         await session.flush()
         return review_item

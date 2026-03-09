@@ -155,9 +155,63 @@ async def test_translate_batch_http_error_disables_ollama_and_returns_empty_tran
         target_language="zh-TW",
     )
 
-    assert call_count == 1
+    assert call_count == 3
     assert translated_content == ""
     assert translated_comments[0]["content_text"] == ""
+    assert service._ollama_enabled is False
+    assert service._consecutive_failures == 3
+
+
+@pytest.mark.asyncio
+async def test_translate_http_error_single_failure_keeps_ollama_enabled() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("translation failed", request=request)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    service = ReviewPayloadService(ollama_client=client, translation_language="zh-TW")
+
+    translated = await service._translate("Raw", "zh-TW")
+
+    assert translated == ""
+    assert service._ollama_enabled is True
+    assert service._consecutive_failures == 1
+
+
+@pytest.mark.asyncio
+async def test_translate_success_resets_consecutive_failures() -> None:
+    call_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise httpx.ConnectError("translation failed", request=request)
+        return httpx.Response(200, json={"message": {"role": "assistant", "content": "翻譯成功"}})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    service = ReviewPayloadService(ollama_client=client, translation_language="zh-TW")
+
+    assert await service._translate("Raw", "zh-TW") == ""
+    assert service._consecutive_failures == 1
+
+    assert await service._translate("Raw", "zh-TW") == "翻譯成功"
+    assert service._ollama_enabled is True
+    assert service._consecutive_failures == 0
+
+
+@pytest.mark.asyncio
+async def test_non_http_errors_do_not_increment_consecutive_failures() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"message": {"role": "assistant", "content": ""}})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    service = ReviewPayloadService(ollama_client=client, translation_language="zh-TW")
+
+    translated = await service._translate("Raw", "zh-TW")
+
+    assert translated == ""
+    assert service._ollama_enabled is True
+    assert service._consecutive_failures == 0
 
 
 @pytest.mark.asyncio
@@ -227,9 +281,9 @@ async def test_generate_threads_draft_appends_source_url_and_strips_model_urls()
 
     assert "attract clicks, likes, and discussion" in captured_prompt
     assert "Length:" in captured_prompt
-    assert "3 to 5 short paragraphs." in captured_prompt
-    assert "call-to-action question" in captured_prompt
-    assert "No bullet points or numbered lists." in captured_prompt
+    assert "3 to 4 short paragraphs." in captured_prompt
+    assert "specific, provocative question" in captured_prompt
+    assert "No bullet points, numbered lists, or Markdown syntax." in captured_prompt
     assert "Do not include any URLs." in captured_prompt
     assert "Top comments:" in captured_prompt
     assert "Score:" not in captured_prompt

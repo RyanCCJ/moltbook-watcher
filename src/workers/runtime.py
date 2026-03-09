@@ -12,7 +12,7 @@ from src.integrations.telegram_client import TelegramClient
 from src.integrations.threads_client import ThreadsClient
 from src.models.base import AsyncSessionLocal
 from src.models.lifecycle import ReviewDecision
-from src.models.review_item import ReviewItem
+from src.models.review_item import ReviewItem, ReviewItemRepository
 from src.services.logging_service import get_logger
 from src.services.notification_service import NotificationService
 from src.services.publish_mode_service import publish_control
@@ -35,6 +35,27 @@ class ReviewCycleError(RuntimeError):
     pass
 
 
+def _build_scoring_service() -> ScoringService:
+    settings = get_settings()
+    return ScoringService(
+        ollama_base_url=settings.ollama_base_url,
+        ollama_model=settings.ollama_model,
+        ollama_timeout_seconds=getattr(settings, "ollama_timeout_seconds", 300),
+    )
+
+
+def _build_review_payload_service() -> ReviewPayloadService:
+    settings = get_settings()
+    return ReviewPayloadService(
+        ollama_base_url=settings.ollama_base_url,
+        ollama_model=settings.ollama_model,
+        ollama_timeout_seconds=getattr(settings, "ollama_timeout_seconds", 300),
+        translation_language=settings.translation_language,
+        threads_language=settings.threads_language,
+        threads_draft_min_score=settings.review_min_score,
+    )
+
+
 async def run_ingestion_once(
     time: str | None = None,
     limit: int | None = None,
@@ -49,23 +70,14 @@ async def run_ingestion_once(
         base_url=settings.moltbook_api_base_url,
         token=settings.moltbook_api_token,
     )
-    scoring_service = ScoringService(
-        ollama_base_url=settings.ollama_base_url,
-        ollama_model=settings.ollama_model,
-    )
+    scoring_service = _build_scoring_service()
     ingestion_worker = IngestionWorker(
         moltbook_client=moltbook_client,
         scoring_service=scoring_service,
         routing_service=RoutingService(fast_track_min_score=settings.auto_publish_min_score),
         review_min_score=settings.review_min_score,
     )
-    review_payload_service = ReviewPayloadService(
-        ollama_base_url=settings.ollama_base_url,
-        ollama_model=settings.ollama_model,
-        translation_language=settings.translation_language,
-        threads_language=settings.threads_language,
-        threads_draft_min_score=settings.review_min_score,
-    )
+    review_payload_service = _build_review_payload_service()
     review_worker = ReviewWorker(payload_service=review_payload_service)
 
     try:
@@ -150,6 +162,36 @@ async def run_ingestion_once(
         if telegram_client is not None:
             await telegram_client.close()
         scoring_service.close()
+        review_payload_service.close()
+
+
+async def run_regenerate_once(review_item_id: str | None = None) -> dict[str, int]:
+    review_payload_service = _build_review_payload_service()
+    review_worker = ReviewWorker(payload_service=review_payload_service)
+    review_repo = ReviewItemRepository()
+
+    try:
+        async with AsyncSessionLocal() as session:
+            try:
+                if review_item_id is not None:
+                    review_item = await review_repo.get(session, review_item_id)
+                    if review_item is None:
+                        raise ValueError("Review item not found")
+                    items = [review_item]
+                    metrics = await review_worker.regenerate_items(session, items, force=True)
+                else:
+                    pending_items = await review_repo.list(session, status=ReviewDecision.PENDING.value, limit=None)
+                    metrics = await review_worker.regenerate_items(session, pending_items)
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+        return {
+            "regenerated_count": metrics.regenerated_count,
+            "skipped_count": metrics.skipped_count,
+            "failed_count": metrics.failed_count,
+        }
+    finally:
         review_payload_service.close()
 
 

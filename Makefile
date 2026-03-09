@@ -1,7 +1,7 @@
-.PHONY: api worker scheduler test lint reset ops-help ops-health ops-smoke
+.PHONY: api worker scheduler test lint reset ops-help ops-health ops-smoke ops-regenerate
 
 api:
-	uv run uvicorn src.api.app:app --reload --host 0.0.0.0 --port 8000
+	uv run uvicorn src.api.app:app --reload --host 127.0.0.1 --port 8000
 
 worker:
 	uv run python -m src.workers.scheduler
@@ -23,3 +23,6 @@ ops-health:
 
 ops-smoke:
 	uv run python scripts/ops_cli.py smoke --approve --limit 1
+
+ops-regenerate:
+	uv run python scripts/ops_cli.py regenerate

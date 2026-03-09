@@ -17,7 +17,7 @@ from src.services.logging_service import get_logger
 from src.services.telegram_reporting import build_stats_payload, load_review_item_payloads
 from src.services.telegram_service import TelegramService
 from src.workers.archive_worker import ArchiveWorker
-from src.workers.runtime import run_ingestion_once, run_publish_once
+from src.workers.runtime import run_ingestion_once, run_publish_once, run_regenerate_once
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/telegram", tags=["telegram"])
@@ -375,6 +375,35 @@ async def _handle_command(
         _schedule_background_task(_run_publish_follow_up(str(chat_id), telegram_client))
         return
 
+    if command == "/regenerate":
+        if len(arguments) > 1 or (arguments and not arguments[0].isdigit()):
+            await telegram_client.send_message(str(chat_id), "Usage: /regenerate [number]")
+            return
+
+        review_repo = ReviewItemRepository()
+        if arguments:
+            pending_items = await review_repo.list(session, status=ReviewDecision.PENDING.value, limit=10)
+            index = int(arguments[0])
+            if index < 1 or index > len(pending_items):
+                await telegram_client.send_message(str(chat_id), "Review item number not found in the current pending list.")
+                return
+            review_item_id = pending_items[index - 1].id
+            item_count = 1
+        else:
+            pending_items = await review_repo.list(session, status=ReviewDecision.PENDING.value, limit=None)
+            items_to_regenerate = [
+                item for item in pending_items if not item.chinese_translation_full.strip() or not item.threads_draft.strip()
+            ]
+            if not items_to_regenerate:
+                await telegram_client.send_message(str(chat_id), "No items need regeneration.")
+                return
+            review_item_id = None
+            item_count = len(items_to_regenerate)
+
+        await telegram_client.send_message(str(chat_id), f"Regeneration started… ({item_count} item{'s' if item_count != 1 else ''})")
+        _schedule_background_task(_run_regenerate_follow_up(str(chat_id), telegram_client, review_item_id=review_item_id))
+        return
+
     if command == "/stats":
         stats = await build_stats_payload(session)
         await telegram_client.send_message(str(chat_id), telegram_service.format_stats_message(stats))
@@ -499,6 +528,29 @@ async def _run_publish_follow_up(chat_id: str, telegram_client: TelegramClient) 
             f"Published: {metrics.get('published_count', 0)}\n"
             f"Retry scheduled: {metrics.get('retry_scheduled_count', 0)}\n"
             f"Failed terminal: {metrics.get('failed_terminal_count', 0)}"
+        ),
+    )
+
+
+async def _run_regenerate_follow_up(
+    chat_id: str,
+    telegram_client: TelegramClient,
+    *,
+    review_item_id: str | None,
+) -> None:
+    try:
+        metrics = await run_regenerate_once(review_item_id=review_item_id)
+    except Exception as error:
+        await telegram_client.send_message(chat_id, f"Regeneration failed: {error}")
+        return
+
+    await telegram_client.send_message(
+        chat_id,
+        (
+            "Regeneration finished.\n"
+            f"Regenerated: {metrics.get('regenerated_count', 0)}\n"
+            f"Skipped: {metrics.get('skipped_count', 0)}\n"
+            f"Failed: {metrics.get('failed_count', 0)}"
         ),
     )
 

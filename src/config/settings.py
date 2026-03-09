@@ -19,6 +19,7 @@ class Settings(BaseSettings):
 
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen3:4b"
+    ollama_timeout_seconds: float = Field(default=300, ge=30)
     translation_language: str = ""
     threads_language: str = "en"
 

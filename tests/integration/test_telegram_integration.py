@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from src.api import app as app_module
+from src.models.review_item import ReviewItem
 from src.workers import runtime, scheduler
 from tests.contract.test_telegram_routes_contract import _build_app_with_telegram, _webhook_headers
 
@@ -191,6 +192,81 @@ async def test_telegram_ingest_command_rejects_invalid_argument(monkeypatch) -> 
     assert response.status_code == 200
     assert "Usage: /ingest [time] [sort] [limit]." in telegram_client.sent_messages[0][1]
     assert scheduled_coroutines == []
+
+
+@pytest.mark.asyncio
+async def test_telegram_regenerate_command_sends_follow_up(monkeypatch) -> None:
+    app, async_session, telegram_client, review_item_id = await _build_app_with_telegram()
+    created_coroutines: list = []
+
+    async with async_session() as session:
+        review_item = await session.get(ReviewItem, review_item_id)
+        assert review_item is not None
+        review_item.chinese_translation_full = ""
+        await session.commit()
+
+    async def fake_run_regenerate_once(review_item_id: str | None = None) -> dict[str, int]:
+        assert review_item_id is None
+        return {"regenerated_count": 1, "skipped_count": 0, "failed_count": 0}
+
+    monkeypatch.setattr("src.api.telegram_routes.run_regenerate_once", fake_run_regenerate_once)
+    monkeypatch.setattr("src.api.telegram_routes._schedule_background_task", lambda coro: created_coroutines.append(coro))
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/telegram/webhook",
+            headers=_webhook_headers(),
+            json={"message": {"chat": {"id": 12345}, "text": "/regenerate"}},
+        )
+
+    for coroutine in created_coroutines:
+        await coroutine
+
+    assert response.status_code == 200
+    assert telegram_client.sent_messages[0][1] == "Regeneration started… (1 item)"
+    assert "Regeneration finished." in telegram_client.sent_messages[1][1]
+    assert "Regenerated: 1" in telegram_client.sent_messages[1][1]
+
+
+@pytest.mark.asyncio
+async def test_telegram_regenerate_command_reports_no_items(monkeypatch) -> None:
+    app, _, telegram_client, _ = await _build_app_with_telegram()
+    created_coroutines: list = []
+
+    monkeypatch.setattr("src.api.telegram_routes._schedule_background_task", lambda coro: created_coroutines.append(coro))
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/telegram/webhook",
+            headers=_webhook_headers(),
+            json={"message": {"chat": {"id": 12345}, "text": "/regenerate"}},
+        )
+
+    assert response.status_code == 200
+    assert telegram_client.sent_messages[0][1] == "No items need regeneration."
+    assert created_coroutines == []
+
+
+@pytest.mark.asyncio
+async def test_telegram_regenerate_command_rejects_invalid_argument(monkeypatch) -> None:
+    app, _, telegram_client, _ = await _build_app_with_telegram()
+    created_coroutines: list = []
+
+    monkeypatch.setattr("src.api.telegram_routes._schedule_background_task", lambda coro: created_coroutines.append(coro))
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/telegram/webhook",
+            headers=_webhook_headers(),
+            json={"message": {"chat": {"id": 12345}, "text": "/regenerate nope"}},
+        )
+
+    assert response.status_code == 200
+    assert telegram_client.sent_messages[0][1] == "Usage: /regenerate [number]"
+    assert created_coroutines == []
 
 
 @pytest.mark.asyncio

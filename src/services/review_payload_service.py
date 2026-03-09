@@ -35,11 +35,12 @@ class ReviewPayloadService:
         ollama_base_url: str = "http://localhost:11434",
         ollama_model: str = "qwen3:4b",
         use_ollama: bool = True,
-        ollama_timeout_seconds: float = 180,
+        ollama_timeout_seconds: float = 300,
         ollama_client: httpx.Client | None = None,
         translation_language: str = "",
         threads_language: str = "en",
         threads_draft_min_score: float = 3.5,
+        max_consecutive_failures: int = 3,
     ) -> None:
         self._ollama_model = ollama_model
         self._ollama_chat_url = f"{ollama_base_url.rstrip('/')}/api/chat"
@@ -49,6 +50,8 @@ class ReviewPayloadService:
         self._translation_language = translation_language.strip()
         self._threads_language = threads_language.strip() or "en"
         self._threads_draft_min_score = threads_draft_min_score
+        self._consecutive_failures = 0
+        self._max_consecutive_failures = max(1, max_consecutive_failures)
 
     async def build_payload(
         self,
@@ -139,7 +142,7 @@ class ReviewPayloadService:
                 reason=str(error),
             )
             if isinstance(error, httpx.HTTPError):
-                self._ollama_enabled = False
+                self._record_ollama_failure()
             return ""
 
     async def _generate_threads_draft(
@@ -191,7 +194,7 @@ class ReviewPayloadService:
         except Exception as error:  # pragma: no cover - fallback path
             logger.warning("threads_draft_generation_failed", reason=str(error))
             if isinstance(error, httpx.HTTPError):
-                self._ollama_enabled = False
+                self._record_ollama_failure()
             return ""
 
     async def _translate_comments(
@@ -294,7 +297,7 @@ class ReviewPayloadService:
         except Exception as error:  # pragma: no cover - network failure path
             logger.warning("ollama_batch_translation_failed", reason=str(error))
             if isinstance(error, httpx.HTTPError):
-                self._ollama_enabled = False
+                self._record_ollama_failure()
 
         translated_content = await self._translate(content, target_language)
         translated_comments = await self._translate_comments(comments, target_language=target_language)
@@ -348,6 +351,19 @@ class ReviewPayloadService:
         similarity = SequenceMatcher(None, normalized_generated, normalized_source).ratio()
         return similarity >= threshold
 
+    def _record_ollama_success(self) -> None:
+        self._consecutive_failures = 0
+
+    def _record_ollama_failure(self) -> None:
+        self._consecutive_failures += 1
+        if self._consecutive_failures >= self._max_consecutive_failures:
+            self._ollama_enabled = False
+            logger.warning(
+                "ollama_circuit_breaker_opened",
+                consecutive_failures=self._consecutive_failures,
+                threshold=self._max_consecutive_failures,
+            )
+
     async def _chat_with_think_fallback(
         self,
         *,
@@ -366,6 +382,7 @@ class ReviewPayloadService:
 
         response = await asyncio.to_thread(lambda: self._ollama_client.post(self._ollama_chat_url, json=request_payload))
         if response.status_code < 400:
+            self._record_ollama_success()
             return response.json()
 
         if not self._is_unknown_param_error(response, "think"):
@@ -381,6 +398,7 @@ class ReviewPayloadService:
             lambda: self._ollama_client.post(self._ollama_chat_url, json=compat_payload)
         )
         compat_response.raise_for_status()
+        self._record_ollama_success()
         return compat_response.json()
 
     @staticmethod

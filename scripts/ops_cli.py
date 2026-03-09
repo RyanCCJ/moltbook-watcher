@@ -91,6 +91,14 @@ def _cmd_publish_jobs(client: httpx.Client, args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_regenerate(client: httpx.Client, args: argparse.Namespace) -> int:
+    params: dict[str, Any] = {}
+    if args.review_item_id:
+        params["review_item_id"] = args.review_item_id
+    _print_json(_request_json(client, "POST", "/ops/regenerate", params=params or None))
+    return 0
+
+
 def _cmd_smoke(client: httpx.Client, args: argparse.Namespace) -> int:
     ingest = _request_json(
         client,
@@ -187,6 +195,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--status", default=None)
     p.add_argument("--timeout", type=float, default=None, help="Override HTTP timeout seconds for this command")
     p.set_defaults(func=_cmd_publish_jobs)
+
+    p = subparsers.add_parser("regenerate", help="Regenerate empty review payloads")
+    p.add_argument("--id", dest="review_item_id", default=None)
+    p.add_argument("--timeout", type=float, default=None, help="Override HTTP timeout seconds for this command")
+    p.set_defaults(func=_cmd_regenerate)
 
     p = subparsers.add_parser("smoke", help="US1->US3 quick smoke flow")
     p.add_argument(

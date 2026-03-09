@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 
 from src.config.settings import get_settings
-from src.workers.runtime import run_ingestion_once, run_publish_once
+from src.workers.runtime import run_ingestion_once, run_publish_once, run_regenerate_once
 
 router = APIRouter(prefix="/ops", tags=["ops"])
 settings = get_settings()
@@ -28,4 +28,17 @@ async def run_publish() -> dict[str, object]:
         metrics = await run_publish_once()
     except Exception as error:
         raise HTTPException(status_code=500, detail=f"publish_failed: {error}") from error
+    return {"ok": True, "metrics": metrics}
+
+
+@router.post("/regenerate")
+async def run_regenerate(review_item_id: str | None = Query(default=None)) -> dict[str, object]:
+    try:
+        metrics = await run_regenerate_once(review_item_id=review_item_id)
+    except ValueError as error:
+        if str(error) == "Review item not found":
+            raise HTTPException(status_code=404, detail="Review item not found") from error
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=f"regenerate_failed: {error}") from error
     return {"ok": True, "metrics": metrics}
