@@ -263,6 +263,8 @@ async def test_run_publish_once_uses_telegram_notification_client_when_enabled(m
             telegram_enabled=True,
             telegram_bot_token="telegram-token",
             telegram_chat_id="12345",
+            max_publish_per_day=5,
+            publish_cooldown_minutes=240,
         ),
     )
 
@@ -331,6 +333,8 @@ async def test_run_publish_once_marks_notifications_disabled_without_telegram(mo
             telegram_enabled=False,
             telegram_bot_token="",
             telegram_chat_id="",
+            max_publish_per_day=5,
+            publish_cooldown_minutes=240,
         ),
     )
 

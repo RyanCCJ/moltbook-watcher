@@ -202,7 +202,7 @@ async def test_telegram_reject_comment_flow_tracks_state_and_rejects() -> None:
             json={
                 "callback_query": {
                     "id": "cb-2",
-                    "data": f"comment:{review_item_id}",
+                    "data": f"reject:{review_item_id}",
                     "message": {
                         "message_id": 78,
                         "text": "<b>Original</b>",

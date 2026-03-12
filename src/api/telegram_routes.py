@@ -106,21 +106,6 @@ async def _handle_callback_query(
         )
         return
     if action == "reject":
-        await _apply_decision(
-            session=session,
-            review_repo=review_repo,
-            review_item_id=review_item_id,
-            decision=ReviewDecision.REJECTED.value,
-            chat_id=chat_id,
-            message_id=message_id,
-            original_text=original_text,
-            telegram_service=telegram_service,
-            telegram_client=telegram_client,
-            callback_query_id=callback_query_id,
-            success_text="Rejected",
-        )
-        return
-    if action == "comment":
         telegram_service.set_pending_comment(
             int(chat_id),
             review_item_id,
@@ -129,6 +114,12 @@ async def _handle_callback_query(
         )
         await telegram_client.send_message(chat_id, "Please type your rejection comment:")
         await telegram_client.answer_callback_query(callback_query_id, text="Send comment")
+        return
+    if action == "regenerate":
+        await telegram_client.answer_callback_query(callback_query_id, text="Regenerating…")
+        _schedule_background_task(
+            _run_regenerate_follow_up(chat_id, telegram_client, review_item_id=review_item_id)
+        )
         return
     if action == "edit":
         telegram_service.set_pending_edit(int(chat_id), review_item_id)
@@ -323,7 +314,17 @@ async def _handle_command(
     argument = " ".join(arguments)
 
     if command == "/pending":
-        items = await load_review_item_payloads(session, status=ReviewDecision.PENDING.value, limit=10)
+        min_score = None
+        if arguments:
+            try:
+                min_score = float(arguments[0])
+            except ValueError:
+                await telegram_client.send_message(str(chat_id), "Usage: /pending [optional_min_score]")
+                return
+        items = await load_review_item_payloads(
+            session, status=ReviewDecision.PENDING.value, limit=10, min_score=min_score
+        )
+        telegram_service.cache_pending_items(chat_id, items)
         await telegram_client.send_message(str(chat_id), telegram_service.format_pending_list(items))
         return
 
@@ -331,7 +332,9 @@ async def _handle_command(
         if not argument.isdigit():
             await telegram_client.send_message(str(chat_id), "Usage: /review &lt;number&gt;")
             return
-        items = await load_review_item_payloads(session, status=ReviewDecision.PENDING.value, limit=10)
+        items = telegram_service.get_cached_pending_items(chat_id)
+        if items is None:
+            items = await load_review_item_payloads(session, status=ReviewDecision.PENDING.value, limit=10)
         index = int(argument)
         if index < 1 or index > len(items):
             await telegram_client.send_message(str(chat_id), "Review item number not found in the current pending list.")
@@ -382,12 +385,19 @@ async def _handle_command(
 
         review_repo = ReviewItemRepository()
         if arguments:
-            pending_items = await review_repo.list(session, status=ReviewDecision.PENDING.value, limit=10)
             index = int(arguments[0])
-            if index < 1 or index > len(pending_items):
-                await telegram_client.send_message(str(chat_id), "Review item number not found in the current pending list.")
-                return
-            review_item_id = pending_items[index - 1].id
+            cached_items = telegram_service.get_cached_pending_items(chat_id)
+            if cached_items is not None:
+                if index < 1 or index > len(cached_items):
+                    await telegram_client.send_message(str(chat_id), "Review item number not found in the current pending list.")
+                    return
+                review_item_id = str(cached_items[index - 1]["id"])
+            else:
+                pending_items = await review_repo.list(session, status=ReviewDecision.PENDING.value, limit=10)
+                if index < 1 or index > len(pending_items):
+                    await telegram_client.send_message(str(chat_id), "Review item number not found in the current pending list.")
+                    return
+                review_item_id = pending_items[index - 1].id
             item_count = 1
         else:
             pending_items = await review_repo.list(session, status=ReviewDecision.PENDING.value, limit=None)

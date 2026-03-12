@@ -30,6 +30,7 @@ class MoltbookPost:
     content_text: str
     created_at: datetime
     engagement_summary: dict | None
+    upvotes: int = 0
     top_comments: list[MoltbookComment] = field(default_factory=list)
 
 
@@ -136,6 +137,11 @@ class MoltbookAPIClient:
         if author_handle is None and isinstance(item.get("author"), dict):
             author_handle = item["author"].get("name")
 
+        try:
+            upvotes = max(0, int(item.get("upvotes", 0)))
+        except (TypeError, ValueError):
+            upvotes = 0
+
         return MoltbookPost(
             source_url=source_url,
             source_post_id=source_post_id,
@@ -143,6 +149,7 @@ class MoltbookAPIClient:
             content_text=content_text,
             created_at=parsed_dt,
             engagement_summary=item.get("engagement_summary"),
+            upvotes=upvotes,
         )
 
     @staticmethod

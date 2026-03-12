@@ -46,7 +46,7 @@ def test_final_score_is_clamped_between_zero_and_five() -> None:
     )
     result = service.compute_scores(vector)
 
-    assert result.content_score == 0.12
+    assert result.content_score == 0.13
     assert result.final_score == 0.0
 
 
@@ -77,8 +77,8 @@ async def test_score_candidate_prefers_ollama_when_available() -> None:
     assert result.reflective_impact == 4.2
     assert result.engagement == 3.8
     assert result.risk == 1
-    assert result.content_score == 4.0
-    assert result.final_score == 3.8
+    assert result.content_score == 4.05
+    assert result.final_score == 3.85
 
 
 @pytest.mark.asyncio
@@ -113,7 +113,7 @@ async def test_score_candidate_retries_with_think_false_when_think_is_rejected()
 
     assert call_count == 2
     assert result.novelty == 4.2
-    assert result.final_score == 3.68
+    assert result.final_score == 3.71
 
 
 @pytest.mark.asyncio
@@ -149,7 +149,7 @@ async def test_score_candidate_retries_with_json_mode_when_first_response_is_not
 
     assert call_count == 2
     assert result.novelty == 4.0
-    assert result.final_score == 3.4
+    assert result.final_score == 3.43
 
 
 @pytest.mark.asyncio
@@ -201,8 +201,8 @@ async def test_score_candidate_falls_back_to_heuristic_and_disables_after_ollama
     assert call_count == 1
     assert first.score_version == "v1"
     assert second.score_version == "v1"
-    assert first.risk == 1
-    assert second.risk == 1
+    assert first.risk == 0
+    assert second.risk == 0
 
 
 @pytest.mark.asyncio

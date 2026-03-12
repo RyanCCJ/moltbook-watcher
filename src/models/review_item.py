@@ -93,10 +93,16 @@ class ReviewItemRepository:
         *,
         status: str | None = None,
         limit: int | None = 10,
+        min_score: float | None = None,
     ) -> list[ReviewItem]:
         statement = select(ReviewItem).order_by(ReviewItem.created_at.desc())
         if status:
             statement = statement.where(ReviewItem.decision == status)
+        if min_score is not None:
+            from src.models.score_card import ScoreCard
+            statement = statement.join(
+                ScoreCard, ScoreCard.candidate_post_id == ReviewItem.candidate_post_id
+            ).where(ScoreCard.final_score >= min_score)
         if limit is not None:
             statement = statement.limit(limit)
         return list((await session.scalars(statement)).all())

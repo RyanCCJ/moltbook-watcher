@@ -12,18 +12,38 @@ class ThreadsClient:
         self._owns_client = client is None
 
     async def publish_post(self, *, text: str, source_url: str) -> str:
-        response = await self._client.post(
-            f"{self._base_url}/publish",
-            headers={"Authorization": f"Bearer {self._token}"},
-            json={
-                "accountId": self._account_id,
+        create_url = f"{self._base_url}/v1.0/{self._account_id}/threads"
+        create_response = await self._client.post(
+            create_url,
+            params={
+                "media_type": "TEXT",
                 "text": text,
-                "sourceUrl": source_url,
+                "access_token": self._token,
             },
         )
-        response.raise_for_status()
-        payload = response.json()
-        return payload["postId"]
+        try:
+            create_response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            error_msg = e.response.text
+            raise RuntimeError(f"Failed to create Threads media container: {error_msg}") from e
+        
+        creation_id = create_response.json()["id"]
+
+        publish_url = f"{self._base_url}/v1.0/{self._account_id}/threads_publish"
+        publish_response = await self._client.post(
+            publish_url,
+            params={
+                "creation_id": creation_id,
+                "access_token": self._token,
+            },
+        )
+        try:
+            publish_response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            error_msg = e.response.text
+            raise RuntimeError(f"Failed to publish Threads container: {error_msg}") from e
+            
+        return publish_response.json()["id"]
 
     async def close(self) -> None:
         if self._owns_client:

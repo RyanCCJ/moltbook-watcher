@@ -279,10 +279,10 @@ async def test_generate_threads_draft_appends_source_url_and_strips_model_urls()
         source_url="https://www.moltbook.com/posts/3",
     )
 
-    assert "attract clicks, likes, and discussion" in captured_prompt
-    assert "Length:" in captured_prompt
-    assert "3 to 4 short paragraphs." in captured_prompt
-    assert "specific, provocative question" in captured_prompt
+    assert "Spark curiosity and drive traffic to the original Moltbook post." in captured_prompt
+    assert "Length & Density:" in captured_prompt
+    assert "2 to 3 short paragraphs." in captured_prompt
+    assert "sharp, opinionated takeaway" in captured_prompt
     assert "No bullet points, numbered lists, or Markdown syntax." in captured_prompt
     assert "Do not include any URLs." in captured_prompt
     assert "Top comments:" in captured_prompt

@@ -119,7 +119,7 @@ async def test_publish_worker_handles_retries_success_and_terminal_notification(
         control_service=PublishControlService(),
     )
 
-    for _ in range(3):
+    for _ in range(6):
         async with async_session() as session:
             await worker.run_cycle(session)
             await session.commit()

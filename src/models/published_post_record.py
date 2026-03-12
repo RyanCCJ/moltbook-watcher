@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, select
+from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -52,3 +52,9 @@ class PublishedPostRecordRepository:
         session.add(record)
         await session.flush()
         return record
+
+    async def count_since(self, session: AsyncSession, since: datetime) -> int:
+        statement = select(func.count()).select_from(PublishedPostRecord).where(
+            PublishedPostRecord.published_at >= since
+        )
+        return (await session.scalar(statement)) or 0

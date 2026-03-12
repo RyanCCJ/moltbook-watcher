@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import JSON, Boolean, DateTime, String, Text, select, text
+from sqlalchemy import JSON, Boolean, DateTime, Integer, String, Text, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -27,6 +27,9 @@ class CandidatePost(Base):
     top_comments_snapshot: Mapped[list[dict[str, object]]] = mapped_column(
         JSON, nullable=False, default=list, server_default=text("'[]'")
     )
+    post_upvotes: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(tz=UTC)
     )
@@ -45,6 +48,7 @@ class CandidatePostRepository:
         captured_at: datetime,
         dedup_fingerprint: str,
         top_comments_snapshot: list[dict[str, object]] | None = None,
+        post_upvotes: int = 0,
     ) -> CandidatePost:
         candidate = CandidatePost(
             source_url=source_url,
@@ -55,6 +59,7 @@ class CandidatePostRepository:
             captured_at=captured_at,
             dedup_fingerprint=dedup_fingerprint,
             top_comments_snapshot=top_comments_snapshot or [],
+            post_upvotes=post_upvotes,
             status=CandidateStatus.SEEN.value,
         )
         session.add(candidate)

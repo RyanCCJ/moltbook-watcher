@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, select
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -68,3 +68,7 @@ class PublishJobRepository:
         if status:
             statement = statement.where(PublishJob.status == status)
         return list((await session.scalars(statement)).all())
+
+    async def get_latest_scheduled_time(self, session: AsyncSession) -> datetime | None:
+        statement = select(func.max(PublishJob.scheduled_for)).where(PublishJob.status == "scheduled")
+        return await session.scalar(statement)

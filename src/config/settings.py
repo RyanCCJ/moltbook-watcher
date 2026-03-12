@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./moltbook.db"
 
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "qwen3:4b"
+    ollama_model: str = "qwen3.5:4b"
     ollama_timeout_seconds: float = Field(default=300, ge=30)
     translation_language: str = ""
     threads_language: str = "en"
@@ -38,6 +38,7 @@ class Settings(BaseSettings):
 
     publish_mode: PublishModeSetting = "manual-approval"
     max_publish_per_day: int = 5
+    publish_cooldown_minutes: int = 180
     ingestion_time: IngestionTime = "hour"
     ingestion_limit: int = Field(default=20, ge=1, le=200)
     ingestion_sort: IngestionSort = "top"
@@ -56,8 +57,15 @@ class Settings(BaseSettings):
     @field_validator("max_publish_per_day")
     @classmethod
     def validate_publish_limit(cls, value: int) -> int:
-        if value < 0 or value > 5:
-            raise ValueError("max_publish_per_day must be between 0 and 5")
+        if value < 0 or value > 10:
+            raise ValueError("max_publish_per_day must be between 0 and 10")
+        return value
+
+    @field_validator("publish_cooldown_minutes")
+    @classmethod
+    def validate_publish_cooldown(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("publish_cooldown_minutes must be >= 0")
         return value
 
     @field_validator("telegram_daily_summary_hour")

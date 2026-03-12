@@ -34,12 +34,16 @@ class PublishWorker:
         retry_policy: PublishRetryPolicy | None = None,
         control_service: PublishControlService | None = None,
         threads_account_key: str = "default-account",
+        max_publish_per_day: int = 0,
+        cooldown_minutes: int = 0,
     ) -> None:
         self._threads_client = threads_client
         self._notification_service = notification_service
         self._retry_policy = retry_policy or PublishRetryPolicy()
         self._control_service = control_service or publish_control
         self._threads_account_key = threads_account_key
+        self._max_publish_per_day = max_publish_per_day
+        self._cooldown_minutes = cooldown_minutes
         self._jobs = PublishJobRepository()
         self._records = PublishedPostRecordRepository()
         self._candidates = CandidatePostRepository()
@@ -57,20 +61,30 @@ class PublishWorker:
             return metrics
 
         now = datetime.now(tz=UTC)
+
+        # Daily cap check: count published records in the last 24 hours
+        if self._max_publish_per_day > 0:
+            since = now - timedelta(hours=24)
+            published_today = await self._records.count_since(session, since)
+            if published_today >= self._max_publish_per_day:
+                return metrics
+
         metrics.scheduled_count = await self._schedule_approved_candidates(session, now)
         jobs = await self._jobs.list_due(session, now)
 
-        for job in jobs:
+        # Task 3.4: process at most 1 due job per cycle
+        if jobs:
+            job = jobs[0]
             outcome = await self._run_single_job(session, job)
-            metrics.processed_count += 1
+            metrics.processed_count = 1
             if outcome == "published":
-                metrics.published_count += 1
+                metrics.published_count = 1
             elif outcome == "retry_scheduled":
-                metrics.retry_scheduled_count += 1
+                metrics.retry_scheduled_count = 1
             elif outcome == "failed_terminal":
-                metrics.failed_terminal_count += 1
+                metrics.failed_terminal_count = 1
             elif outcome == "cancelled":
-                metrics.cancelled_count += 1
+                metrics.cancelled_count = 1
 
         return metrics
 
@@ -82,14 +96,32 @@ class PublishWorker:
             statement = statement.where(CandidatePost.id.notin_(list(existing_candidate_ids)))
 
         approved_candidates = list((await session.scalars(statement)).all())
+        if not approved_candidates:
+            return 0
+
+        # Determine the anchor time for stagger scheduling
+        if self._cooldown_minutes > 0:
+            latest_scheduled = await self._jobs.get_latest_scheduled_time(session)
+            if latest_scheduled is not None:
+                # Ensure latest_scheduled is timezone-aware for comparison
+                if latest_scheduled.tzinfo is None:
+                    latest_scheduled = latest_scheduled.replace(tzinfo=UTC)
+                next_slot = max(now, latest_scheduled) + timedelta(minutes=self._cooldown_minutes)
+            else:
+                next_slot = now
+        else:
+            next_slot = now
+
         for candidate in approved_candidates:
             await self._jobs.create(
                 session,
                 candidate_post_id=candidate.id,
                 threads_account_key=self._threads_account_key,
-                scheduled_for=now,
+                scheduled_for=next_slot,
             )
             await self._candidates.transition_status(session, candidate, CandidateStatus.SCHEDULED)
+            if self._cooldown_minutes > 0:
+                next_slot = next_slot + timedelta(minutes=self._cooldown_minutes)
 
         return len(approved_candidates)
 

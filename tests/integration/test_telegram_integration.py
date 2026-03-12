@@ -47,8 +47,8 @@ async def test_full_telegram_reject_comment_flow() -> None:
             headers=_webhook_headers(),
             json={
                 "callback_query": {
-                    "id": "comment-flow",
-                    "data": f"comment:{review_item_id}",
+                    "id": "reject-flow",
+                    "data": f"reject:{review_item_id}",
                     "message": {
                         "message_id": 502,
                         "text": "<b>Original</b>",
@@ -270,6 +270,43 @@ async def test_telegram_regenerate_command_rejects_invalid_argument(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_telegram_regenerate_with_number_uses_cached_pending_items(monkeypatch) -> None:
+    app, _, telegram_client, review_item_id = await _build_app_with_telegram()
+    created_coroutines: list = []
+    captured_ids: list[str | None] = []
+
+    async def fake_run_regenerate_once(review_item_id: str | None = None) -> dict[str, int]:
+        captured_ids.append(review_item_id)
+        return {"regenerated_count": 1, "skipped_count": 0, "failed_count": 0}
+
+    monkeypatch.setattr("src.api.telegram_routes.run_regenerate_once", fake_run_regenerate_once)
+    monkeypatch.setattr("src.api.telegram_routes._schedule_background_task", lambda coro: created_coroutines.append(coro))
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        # First, call /pending to populate the cache (simulates /pending [min_score] flow)
+        await client.post(
+            "/telegram/webhook",
+            headers=_webhook_headers(),
+            json={"message": {"chat": {"id": 12345}, "text": "/pending"}},
+        )
+        # Then call /regenerate 1 — should use the cached item, not a fresh DB query
+        response = await client.post(
+            "/telegram/webhook",
+            headers=_webhook_headers(),
+            json={"message": {"chat": {"id": 12345}, "text": "/regenerate 1"}},
+        )
+
+    for coroutine in created_coroutines:
+        await coroutine
+
+    assert response.status_code == 200
+    assert telegram_client.sent_messages[1][1] == "Regeneration started… (1 item)"
+    assert len(captured_ids) == 1
+    assert captured_ids[0] == review_item_id
+
+
+@pytest.mark.asyncio
 async def test_telegram_features_disabled_when_token_empty(monkeypatch) -> None:
     monkeypatch.setattr(
         app_module,
@@ -369,6 +406,8 @@ async def test_telegram_features_disabled_when_token_empty(monkeypatch) -> None:
             telegram_enabled=False,
             telegram_bot_token="",
             telegram_chat_id="",
+            max_publish_per_day=5,
+            publish_cooldown_minutes=240,
         ),
     )
 

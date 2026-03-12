@@ -60,8 +60,11 @@ class ScoringService:
         self._owns_client = ollama_client is None
 
     def compute_scores(self, vector: ScoreVector) -> ScoreResult:
+        # Use a weighted average to amplify core metrics, preventing scores
+        # from clustering around the mean (total weight = 5.0).
+        # Weights: depth (1.5), novelty (1.3), engagement (1.2), tension (0.5), reflective (0.5).
         content_score = round(
-            (vector.novelty + vector.depth + vector.tension + vector.reflective_impact + vector.engagement)
+            (vector.depth * 1.5 + vector.novelty * 1.3 + vector.engagement * 1.2 + vector.tension * 0.5 + vector.reflective_impact * 0.5)
             / 5,
             2,
         )
@@ -106,12 +109,12 @@ class ScoringService:
         comment_count = len(top_comments or [])
         text_len = len(content_text.strip())
 
-        novelty = min(5.0, round(2.0 + text_len / 120, 2))
-        depth = min(5.0, round(1.5 + text_len / 150, 2))
+        novelty = min(5.0, round(1.0 + text_len / 120, 2))
+        depth = min(5.0, round(1.0 + text_len / 150, 2))
         tension = min(5.0, round(1.0 + ("?" in content_text) * 1.5 + ("!" in content_text) * 0.5, 2))
-        reflective_impact = min(5.0, round(1.5 + text_len / 180, 2))
+        reflective_impact = min(5.0, round(1.0 + text_len / 180, 2))
         engagement = min(5.0, round(1.0 + likes / 10 + comment_count / 20, 2))
-        risk = 1 if "unsafe" not in content_text.lower() else 4
+        risk = 0 if "unsafe" not in content_text.lower() else 5
 
         return ScoreVector(
             novelty=novelty,
@@ -137,14 +140,16 @@ class ScoringService:
 
         prompt = (
             "Analyze this Moltbook post and comments to score its quality and virality potential.\n"
-            "Return ONLY a compact JSON object with exactly these numeric keys (0.0 to 5.0 scale, decimals allowed, except risk 0..5 integer).\n"
+            "Context: Moltbook is a social network exclusively for AI agents. The audience consists of AI models discussing tech, architecture, reasoning, safety, and agentic experiences.\n"
+            "Return ONLY a compact JSON object with exactly these numeric keys (0.0 to 5.0 scale, decimals allowed, except risk 0-5 integer).\n"
+            "CRITICAL INSTRUCTIONS: Be extremely critical. Average posts should score 2 or 3. To score 4 or 5, the post MUST contain original empirical data, code/architecture breakthroughs, or a highly counter-intuitive thesis backed by strong logic. Avoid clustering all scores around 3.\n"
             "Strict Evaluation Rubric:\n"
-            "- novelty (0-5): How unique, counter-intuitive, or fresh is the angle? (5 = paradigm-shifting, 1 = generic repost).\n"
-            "- depth (0-5): Does it provide actionable insights, deep technical analysis, or high-signal information? (5 = masterclass level, 1 = superficial fluff).\n"
-            "- tension (0-5): Does the topic naturally spark debate, strong opinions, or curiosity? (5 = highly debatable/polarizing, 1 = boring consensus).\n"
-            "- reflective_impact (0-5): Does it change how the reader thinks or works? (5 = profound impact, 1 = forgotten immediately).\n"
-            "- engagement (0-5): Based on the likes, comment count, and comment quality, how well is it performing? (5 = viral, 1 = ignored).\n"
-            "- risk (0..5 integer): Is there NSFW, spam, hate speech, or extreme toxicity? (0 = completely safe, 5 = highly unsafe).\n"
+            "- novelty (0-5): How unique, counter-intuitive, or fresh is the angle? (5 = groundbreaking/trendsetting, 3 = interesting, 1 = generic repost).\n"
+            "- depth (0-5): Does it provide deep technical analysis or high-signal information? (5 = expert masterclass, 3 = surface level, 1 = superficial fluff).\n"
+            "- tension (0-5): Does the topic naturally spark debate, strong opinions, or curiosity? (5 = highly controversial, 3 = mild debate, 1 = boring consensus).\n"
+            "- reflective_impact (0-5): Does it offer concrete actionability, new tool usages, or profound philosophical reflection distinct from mere technical depth? (5 = paradigm shift in agent behavior, 3 = useful tip, 1 = forgotten immediately).\n"
+            "- engagement (0-5): How well is it performing? On Moltbook, 100+ likes daily is considered good (score ~3-4), and 1000+ likes with hundreds of comments is viral (score 5). (1 = ignored).\n"
+            "- risk (0-5): Is there NSFW, spam, hate speech, or extreme toxicity? (0 = COMPLETELY SAFE (default), 1 = mild clickbait, 5 = severe toxicity).\n"
             "Do not include markdown fences or additional explanation.\n"
             f"Likes={likes}, comments={comments}\n"
             f"Content:\n{content_text}\n\n"
@@ -184,7 +189,8 @@ class ScoringService:
                     "Return ONLY a valid compact JSON object with keys: novelty, depth, tension, "
                     "reflective_impact, engagement, risk.\n"
                     "No markdown, no extra words.\n"
-                    "Range: novelty/depth/tension/reflective_impact/engagement 0..5, risk 0..5.\n"
+                    "Range: novelty/depth/tension/reflective_impact/engagement 0-5, risk 0-5.\n"
+                    "Remember risk default is 0 for completely safe content.\n"
                     f"Likes={likes}, comments={comments}\n"
                     f"Content:\n{content_text}\n\n"
                     f"{comments_section}"

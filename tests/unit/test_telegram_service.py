@@ -57,6 +57,7 @@ def test_format_review_message_uses_threads_draft_and_metadata() -> None:
     assert "<b>Review item</b> <code>review-1</code>" in message
     assert "Threads draft" in message
     assert "<b>Final score:</b> 8.7" in message
+    assert "<b>Post upvotes:</b> 0 👍" in message
     assert "<b>Risk tags:</b> low, news" in message
     assert 'href="https://example.com/post/1"' in message
 
@@ -91,7 +92,7 @@ def test_build_review_inline_keyboard_uses_action_id_callback_data() -> None:
                 {"text": "Reject", "callback_data": "reject:abc-123"},
             ],
             [
-                {"text": "Reject+Comment", "callback_data": "comment:abc-123"},
+                {"text": "Regenerate", "callback_data": "regenerate:abc-123"},
                 {"text": "Edit Draft", "callback_data": "edit:abc-123"},
             ],
         ]
@@ -193,8 +194,8 @@ def test_format_pending_list_limits_to_ten_items() -> None:
 
     message = service.format_pending_list(items)
 
-    assert "1. Draft 0. | score 8.7 | risk low, news" in message
-    assert "10. Draft 9. | score 8.7 | risk low, news" in message
+    assert "1. Draft 0. | score 8.7 | 0 👍 | risk low, news" in message
+    assert "10. Draft 9. | score 8.7 | 0 👍 | risk low, news" in message
     assert "Draft 10" not in message
     assert "… and 2 more" in message
     assert "Use /review &lt;number&gt; to open full details." in message

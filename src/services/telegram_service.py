@@ -18,6 +18,7 @@ class TelegramService:
         self._pending_comments: dict[int, str] = {}
         self._pending_edits: dict[int, str] = {}
         self._pending_comment_context: dict[int, tuple[int, str]] = {}
+        self._last_pending_items: dict[int, list[dict[str, Any]]] = {}
 
     def format_ingestion_digest(
         self,
@@ -68,6 +69,7 @@ class TelegramService:
         lines = [
             header,
             f"<b>Draft</b>\n{escape(self._truncate_content(content))}",
+            f"<b>Post upvotes:</b> {review_item_data.get('postUpvotes', 0)}",
             f"<b>Final score:</b> {escape(score_value)}",
             f"<b>Risk tags:</b> {escape(risk_text)}",
         ]
@@ -84,7 +86,7 @@ class TelegramService:
                     {"text": "Reject", "callback_data": f"reject:{review_item_id}"},
                 ],
                 [
-                    {"text": "Reject+Comment", "callback_data": f"comment:{review_item_id}"},
+                    {"text": "Regenerate", "callback_data": f"regenerate:{review_item_id}"},
                     {"text": "Edit Draft", "callback_data": f"edit:{review_item_id}"},
                 ],
             ]
@@ -162,6 +164,12 @@ class TelegramService:
     def clear_pending_edit(self, chat_id: int) -> None:
         self._pending_edits.pop(chat_id, None)
 
+    def cache_pending_items(self, chat_id: int, items: list[dict[str, Any]]) -> None:
+        self._last_pending_items[chat_id] = items
+
+    def get_cached_pending_items(self, chat_id: int) -> list[dict[str, Any]] | None:
+        return self._last_pending_items.get(chat_id)
+
     def clear_pending_state(self, chat_id: int) -> bool:
         cleared = False
         if chat_id in self._pending_comments:
@@ -182,9 +190,10 @@ class TelegramService:
         for index, item in enumerate(visible_items, start=1):
             title = self._summarize_pending_item(item)
             score = self._get_final_score(item)
+            upvotes = item.get("postUpvotes", 0)
             risk_tags = item.get("riskTags") or []
             risk_text = ", ".join(str(tag) for tag in risk_tags) if risk_tags else "none"
-            lines.append(f"{index}. {escape(title)} | score {escape(score)} | risk {escape(risk_text)}")
+            lines.append(f"{index}. {escape(title)} | upvotes {upvotes} | score {escape(score)} | risk {escape(risk_text)}")
         remaining = len(items) - len(visible_items)
         if remaining > 0:
             lines.append(f"… and {remaining} more")
@@ -205,6 +214,7 @@ class TelegramService:
 
         header_lines = [
             f"<b>Review item</b> <code>{escape(review_item_id)}</code>",
+            f"<b>Post upvotes:</b> {review_item_data.get('postUpvotes', 0)}",
             f"<b>Final score:</b> {escape(score_value)}",
             f"<b>Risk tags:</b> {escape(risk_text)}",
         ]
@@ -295,7 +305,7 @@ class TelegramService:
         return "\n".join(
             [
                 "<b>Available commands</b>",
-                "/pending - Show pending review items",
+                "/pending [min_score] - Show pending review items",
                 "/review &lt;number&gt; - Show full details for one pending item",
                 "/ingest [time] [sort] [limit] - Start ingestion; tokens can be in any order",
                 "/publish - Start one publish cycle",
@@ -427,7 +437,7 @@ class TelegramService:
                 upvotes = comment.get("upvotes")
                 line = f"{index}. @{author}"
                 if upvotes is not None:
-                    line += f" ({upvotes} upvotes)"
+                    line += f" ({upvotes} 👍)"
                 if content:
                     line += f"\n{content}"
                 lines.append(line)

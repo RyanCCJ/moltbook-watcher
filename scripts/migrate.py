@@ -54,21 +54,24 @@ async def _ensure_candidate_post_columns() -> None:
             existing_columns.remove("source_window")
             existing_columns.add("source_time")
 
-        if "top_comments_snapshot" in existing_columns:
-            return
-
-        await connection.execute(
-            text("ALTER TABLE candidate_posts ADD COLUMN top_comments_snapshot JSON NOT NULL DEFAULT '[]'")
-        )
-        await connection.execute(
-            text(
-                """
-                UPDATE candidate_posts
-                SET top_comments_snapshot = '[]'
-                WHERE top_comments_snapshot IS NULL
-                """
+        if "top_comments_snapshot" not in existing_columns:
+            await connection.execute(
+                text("ALTER TABLE candidate_posts ADD COLUMN top_comments_snapshot JSON NOT NULL DEFAULT '[]'")
             )
-        )
+            await connection.execute(
+                text(
+                    """
+                    UPDATE candidate_posts
+                    SET top_comments_snapshot = '[]'
+                    WHERE top_comments_snapshot IS NULL
+                    """
+                )
+            )
+
+        if "post_upvotes" not in existing_columns:
+            await connection.execute(
+                text("ALTER TABLE candidate_posts ADD COLUMN post_upvotes INTEGER NOT NULL DEFAULT 0")
+            )
 
 
 async def _ensure_score_card_columns() -> None:

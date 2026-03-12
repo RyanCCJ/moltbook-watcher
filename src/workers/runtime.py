@@ -218,6 +218,8 @@ async def run_publish_once() -> dict[str, int]:
         threads_client=threads_client,
         notification_service=notification_service,
         threads_account_key=settings.threads_account_id,
+        max_publish_per_day=settings.max_publish_per_day,
+        cooldown_minutes=settings.publish_cooldown_minutes,
     )
 
     try:

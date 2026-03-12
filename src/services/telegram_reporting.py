@@ -17,9 +17,10 @@ async def load_review_item_payloads(
     session: AsyncSession,
     *,
     status: str,
-    limit: int,
+    limit: int | None = None,
+    min_score: float | None = None,
 ) -> list[dict[str, Any]]:
-    review_items = await ReviewItemRepository().list(session, status=status, limit=limit)
+    review_items = await ReviewItemRepository().list(session, status=status, limit=limit, min_score=min_score)
     score_repo = ScoreCardRepository()
     items: list[dict[str, Any]] = []
     for review in review_items:
@@ -41,6 +42,7 @@ async def load_review_item_payloads(
                 "aiScore": ai_score,
                 "riskTags": review.risk_tags,
                 "sourceUrl": candidate.source_url,
+                "postUpvotes": candidate.post_upvotes,
                 "followUpRationale": review.follow_up_rationale,
                 "decision": review.decision,
             }

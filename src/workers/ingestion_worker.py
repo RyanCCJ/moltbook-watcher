@@ -98,6 +98,13 @@ class IngestionWorker:
                 for comment in post.top_comments
             ]
 
+            post_upvotes = post.upvotes
+            if not post_upvotes and isinstance(post.engagement_summary, dict):
+                try:
+                    post_upvotes = max(0, int(post.engagement_summary.get("upvotes", 0)))
+                except (TypeError, ValueError):
+                    pass
+
             candidate = await self._candidate_repo.create(
                 session,
                 source_url=post.source_url,
@@ -108,6 +115,7 @@ class IngestionWorker:
                 captured_at=post.created_at,
                 dedup_fingerprint=fingerprint,
                 top_comments_snapshot=comment_snapshot,
+                post_upvotes=post_upvotes,
             )
 
             score = await self._scoring_service.score_candidate(
