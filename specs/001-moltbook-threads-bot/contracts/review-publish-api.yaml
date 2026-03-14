@@ -1,0 +1,207 @@
+openapi: 3.0.3
+info:
+  title: Moltbook Threads Curation API Contract
+  version: 0.1.0
+  description: >-
+    Contract for reviewer workflow and publishing-control interfaces used by the
+    MVP curation bot.
+servers:
+  - url: https://local.moltbook-curation.internal
+paths:
+  /review-items:
+    get:
+      summary: List review candidates for operator workflow
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [pending, approved, rejected, archived]
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 10
+      responses:
+        '200':
+          description: Review items returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ReviewItem'
+  /review-items/{reviewItemId}/decision:
+    post:
+      summary: Submit operator decision for a review item
+      parameters:
+        - in: path
+          name: reviewItemId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewDecisionRequest'
+      responses:
+        '200':
+          description: Decision accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewDecisionResponse'
+        '409':
+          description: Invalid state transition
+  /publishing/mode:
+    put:
+      summary: Switch publishing mode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode]
+              properties:
+                mode:
+                  type: string
+                  enum: [manual-approval, low-risk-auto]
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Mode switched and audit event recorded
+  /publishing/pause:
+    post:
+      summary: Activate global publish pause
+      responses:
+        '202':
+          description: Pause accepted
+  /publish-jobs:
+    get:
+      summary: List publish jobs and current status
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [scheduled, in_progress, published, failed_terminal, cancelled]
+      responses:
+        '200':
+          description: Publish jobs returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PublishJob'
+components:
+  schemas:
+    ReviewItem:
+      type: object
+      required:
+        - id
+        - candidateId
+        - englishDraft
+        - chineseTranslationFull
+        - riskTags
+        - sourceUrl
+        - capturedAt
+        - decision
+      properties:
+        id:
+          type: string
+          format: uuid
+        candidateId:
+          type: string
+          format: uuid
+        englishDraft:
+          type: string
+        chineseTranslationFull:
+          type: string
+        riskTags:
+          type: array
+          items:
+            type: string
+        sourceUrl:
+          type: string
+          format: uri
+        capturedAt:
+          type: string
+          format: date-time
+        followUpRationale:
+          type: string
+          nullable: true
+        decision:
+          type: string
+          enum: [pending, approved, rejected, archived]
+    ReviewDecisionRequest:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [approved, rejected, archived]
+        comment:
+          type: string
+        reviewedBy:
+          type: string
+    ReviewDecisionResponse:
+      type: object
+      required: [reviewItemId, decision, decidedAt]
+      properties:
+        reviewItemId:
+          type: string
+          format: uuid
+        decision:
+          type: string
+          enum: [approved, rejected, archived]
+        decidedAt:
+          type: string
+          format: date-time
+    PublishJob:
+      type: object
+      required:
+        - id
+        - candidateId
+        - scheduledFor
+        - status
+        - attemptCount
+        - maxAttempts
+      properties:
+        id:
+          type: string
+          format: uuid
+        candidateId:
+          type: string
+          format: uuid
+        scheduledFor:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [scheduled, in_progress, published, failed_terminal, cancelled]
+        attemptCount:
+          type: integer
+          minimum: 0
+        maxAttempts:
+          type: integer
+          minimum: 1
+        lastErrorCode:
+          type: string
+          nullable: true
+        lastErrorMessage:
+          type: string
+          nullable: true

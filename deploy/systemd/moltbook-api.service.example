@@ -1,0 +1,17 @@
+[Unit]
+Description=Moltbook Watcher API
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=<SERVICE_USER>
+WorkingDirectory=<PROJECT_DIR>
+EnvironmentFile=<PROJECT_DIR>/.env
+ExecStart=/usr/bin/env uv run uvicorn src.api.app:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

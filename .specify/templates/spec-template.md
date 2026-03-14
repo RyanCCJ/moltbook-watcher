@@ -65,6 +65,10 @@
 
 [Add more user stories as needed, each with an assigned priority]
 
+**Constitution alignment**: Each user story MUST be independently testable and
+deliver value on its own. Each story that changes business logic MUST define
+unit-test expectations for that logic.
+
 ### Edge Cases
 
 <!--
@@ -74,6 +78,24 @@
 
 - What happens when [boundary condition]?
 - How does system handle [error scenario]?
+
+## Out of Scope *(mandatory)*
+
+- Explicitly list what this change will NOT implement.
+- Document deferred work so it does not leak into implementation tasks.
+
+## Observability & Operations *(mandatory)*
+
+- **Logging**: [What MUST be logged for feature success/failure paths]
+- **Metrics**: [What measurable indicators validate behavior and success criteria]
+- **Alerting**: [What conditions require operator attention]
+- **Rollout/Rollback**: [How to safely enable, verify, and revert if needed]
+
+## Test Strategy *(mandatory)*
+
+- **Unit Tests**: [Business logic paths and edge cases that MUST be unit tested]
+- **Integration Tests**: [Cross-component behaviors that require integration coverage]
+- **Contract Tests**: [Interface-level guarantees that require contract coverage]
 
 ## Requirements *(mandatory)*
 
@@ -89,11 +111,9 @@
 - **FR-003**: Users MUST be able to [key interaction, e.g., "reset their password"]
 - **FR-004**: System MUST [data requirement, e.g., "persist user preferences"]
 - **FR-005**: System MUST [behavior, e.g., "log all security events"]
-
-*Example of marking unclear requirements:*
-
-- **FR-006**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
-- **FR-007**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
+- **FR-006**: System MUST define compatibility impact for existing users/interfaces.
+- **FR-007**: System MUST validate inputs and protect sensitive data in logs and
+  stored artifacts.
 
 ### Key Entities *(include if feature involves data)*
 

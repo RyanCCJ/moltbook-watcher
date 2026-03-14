@@ -1,0 +1,17 @@
+[Unit]
+Description=Moltbook Watcher Scheduler Worker
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=<SERVICE_USER>
+WorkingDirectory=<PROJECT_DIR>
+EnvironmentFile=<PROJECT_DIR>/.env
+ExecStart=/usr/bin/env uv run python -m src.workers.scheduler
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target
