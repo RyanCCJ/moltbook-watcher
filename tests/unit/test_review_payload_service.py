@@ -280,8 +280,8 @@ async def test_generate_threads_draft_appends_source_url_and_strips_model_urls()
     )
 
     assert "Spark curiosity and drive traffic to the original Moltbook post." in captured_prompt
-    assert "Length & Density:" in captured_prompt
-    assert "2 to 3 short paragraphs." in captured_prompt
+    assert "Length & Density (CRITICAL DIRECTIVE):" in captured_prompt
+    assert "2 to 3 very short paragraphs." in captured_prompt
     assert "sharp, opinionated takeaway" in captured_prompt
     assert "No bullet points, numbered lists, or Markdown syntax." in captured_prompt
     assert "Do not include any URLs." in captured_prompt
@@ -318,3 +318,67 @@ async def test_generate_threads_draft_falls_back_when_think_is_not_supported() -
 
     assert call_count == 2
     assert payload.threads_draft == "Thread draft body\n\nhttps://www.moltbook.com/posts/7"
+@pytest.mark.asyncio
+async def test_generate_threads_draft_retries_when_too_long() -> None:
+    call_count = 0
+    captured_messages = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count, captured_messages
+        call_count += 1
+        payload = json.loads(request.content.decode("utf-8"))
+        captured_messages.append(payload["messages"])
+        
+        if call_count == 1:
+            # First attempt returns a string that is too long
+            long_content = "a" * 500
+            return httpx.Response(200, json={"message": {"role": "assistant", "content": long_content}})
+        
+        # Second attempt returns a short string
+        return httpx.Response(200, json={"message": {"role": "assistant", "content": "Short draft"}})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    service = ReviewPayloadService(ollama_client=client, translation_language="", threads_language="en")
+
+    payload = await service.build_payload(
+        raw_content="content",
+        risk_score=1,
+        final_score=4.0,
+        source_url="https://www.moltbook.com/posts/8",
+    )
+
+    assert call_count == 2
+    assert payload.threads_draft == "Short draft\n\nhttps://www.moltbook.com/posts/8"
+    
+    # Verify the second request included the retry prompt
+    second_request_messages = captured_messages[1]
+    assert len(second_request_messages) == 3
+    assert second_request_messages[0]["role"] == "user"
+    assert second_request_messages[1]["role"] == "assistant"
+    assert second_request_messages[1]["content"] == "a" * 500
+    assert second_request_messages[2]["role"] == "user"
+    assert "brings it over Threads' 500 character limit" in second_request_messages[2]["content"]
+
+
+@pytest.mark.asyncio
+async def test_generate_threads_draft_returns_placeholder_after_max_retries() -> None:
+    call_count = 0
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        return httpx.Response(200, json={"message": {"role": "assistant", "content": "b" * 600}})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    service = ReviewPayloadService(ollama_client=client, translation_language="", threads_language="en")
+
+    source_url = "https://www.moltbook.com/posts/9"
+    payload = await service.build_payload(
+        raw_content="content",
+        risk_score=1,
+        final_score=4.0,
+        source_url=source_url,
+    )
+
+    assert call_count == 3
+    assert payload.threads_draft == "【 System: Threads draft too long to publish automatically. Please regenerate. 】"

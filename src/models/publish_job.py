@@ -70,5 +70,5 @@ class PublishJobRepository:
         return list((await session.scalars(statement)).all())
 
     async def get_latest_scheduled_time(self, session: AsyncSession) -> datetime | None:
-        statement = select(func.max(PublishJob.scheduled_for)).where(PublishJob.status == "scheduled")
+        statement = select(func.max(PublishJob.scheduled_for))
         return await session.scalar(statement)

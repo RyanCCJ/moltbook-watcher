@@ -191,13 +191,28 @@ class ReviewWorker:
         return comments
 
     @staticmethod
-    def _needs_regeneration(item: ReviewItem) -> bool:
-        return not item.chinese_translation_full.strip() or not item.threads_draft.strip()
+    def _is_invalid_draft(draft: str) -> bool:
+        """Return True if the draft is empty, a system error placeholder, or exceeds the Threads character limit."""
+        stripped = draft.strip()
+        if not stripped:
+            return True
+        if stripped.startswith("【 System:"):
+            return True
+        if len(stripped) > 500:
+            return True
+        return False
 
-    @staticmethod
-    def _regeneration_succeeded(item: ReviewItem, payload: Any, *, force: bool) -> bool:
+    @classmethod
+    def _needs_regeneration(cls, item: ReviewItem) -> bool:
+        return (
+            not item.chinese_translation_full.strip()
+            or cls._is_invalid_draft(item.threads_draft)
+        )
+
+    @classmethod
+    def _regeneration_succeeded(cls, item: ReviewItem, payload: Any, *, force: bool) -> bool:
         missing_translation = not item.chinese_translation_full.strip()
-        missing_threads = not item.threads_draft.strip()
+        invalid_threads = cls._is_invalid_draft(item.threads_draft)
 
         if force:
             return any(
@@ -211,6 +226,6 @@ class ReviewWorker:
 
         if missing_translation and not payload.chinese_translation_full.strip():
             return False
-        if missing_threads and not payload.threads_draft.strip():
+        if invalid_threads and cls._is_invalid_draft(payload.threads_draft):
             return False
         return True

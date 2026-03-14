@@ -171,28 +171,53 @@ class ReviewPayloadService:
             "- Do not include any URLs.\n"
             "- Use emojis sparingly (max 1 or 2 total).\n"
             "- STRICTLY NO forced, generic reflections (e.g., 'This makes us ponder the future'). Keep it grounded and substantive.\n"
-            "Length & Density:\n"
-            "- STRICT MAX LENGTH: 400 characters total (Threads limit is 500). Keeping it impactful but natural.\n"
-            "- Maximize readability with 2 to 3 short paragraphs.\n"
+            "Length & Density (CRITICAL DIRECTIVE):\n"
+            "- STRICT MAX LENGTH: TARGET 250-350 CHARACTERS. YOU MUST NOT EXCEED 400 CHARACTERS under any circumstances. (Threads limit is 500 characters, but we need room for the URL).\n"
+            "- Maximize readability with exactly 2 to 3 very short paragraphs.\n"
             "Content Strategy:\n"
             "- Paragraph 1: The Hook. Highlight a hot debate or a counter-intuitive observation happening on Moltbook right now. NO generic rhetorical questions.\n"
             "- Paragraph 2: The Core Insight. Summarize the highest-signal takeaway or fascinating agentic behavior being discussed. Mention the community reaction if relevant.\n"
-            "- Paragraph 3: The Kicker. End with a sharp, opinionated takeaway or a highly specific debate prompt. STRICTLY NO lazy questions like 'What do you think?'.\n"
+            "- Paragraph 3: The Kicker (Optional if too long). End with a sharp, opinionated takeaway or a highly specific debate prompt. STRICTLY NO lazy questions like 'What do you think?'.\n"
             f"Post content:\n{raw_content}\n\n"
             f"{comments_section}\n\n"
             "Return only the final post text."
         )
 
+        messages = [{"role": "user", "content": prompt}]
+        
         try:
-            payload = await self._chat_with_think_fallback(prompt=prompt, think=True)
-            generated = self._extract_chat_content(payload)
-            generated = self._strip_urls(generated).strip()
-            if not generated:
-                return ""
-            if self._is_near_copy_of_source(generated, raw_content):
-                logger.warning("threads_draft_too_similar_to_source")
-                return ""
-            return f"{generated}\n\n{source_url}"
+            for attempt in range(3):
+                payload = await self._chat_with_think_fallback(messages=messages, think=True)
+                generated = self._extract_chat_content(payload)
+                generated = self._strip_urls(generated).strip()
+                
+                if not generated:
+                    return ""
+                if self._is_near_copy_of_source(generated, raw_content):
+                    logger.warning("threads_draft_too_similar_to_source")
+                    return ""
+                    
+                suffix = f"\n\n{source_url}"
+                if len(generated) + len(suffix) <= 500:
+                    return f"{generated}{suffix}"
+                
+                if attempt < 2:
+                    logger.info("threads_draft_too_long_retrying", length=len(generated) + len(suffix), attempt=attempt)
+                    messages.append({"role": "assistant", "content": generated})
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            f"Your draft is {len(generated)} characters. Adding the URL brings it over Threads' 500 character limit. "
+                            f"Please trim it down to under {450 - len(suffix)} characters. "
+                            "Keep the same tone and voice — just remove the least essential words or condense one sentence. "
+                            "Do not change the structure or the overall message."
+                        ),
+                    })
+                else:
+                    logger.warning("threads_draft_generation_failed_length_exceeded_after_retries", length=len(generated) + len(suffix))
+                    return "【 System: Threads draft too long to publish automatically. Please regenerate. 】"
+                    
+            return "【 System: Threads draft too long to publish automatically. Please regenerate. 】"
         except Exception as error:  # pragma: no cover - fallback path
             logger.warning("threads_draft_generation_failed", reason=str(error))
             if isinstance(error, httpx.HTTPError):
@@ -369,13 +394,17 @@ class ReviewPayloadService:
     async def _chat_with_think_fallback(
         self,
         *,
-        prompt: str,
+        prompt: str | None = None,
+        messages: list[dict[str, str]] | None = None,
         think: bool,
         response_format: Any | None = None,
     ) -> dict[str, Any]:
+        if messages is None:
+            messages = [{"role": "user", "content": prompt}] if prompt else []
+            
         request_payload: dict[str, Any] = {
             "model": self._ollama_model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": messages,
             "stream": False,
             "think": think,
         }

@@ -190,3 +190,31 @@ class ReviewItemRepository:
         session.add(review_item)
         await session.flush()
         return review_item
+
+    async def demote_to_pending(
+        self,
+        session: AsyncSession,
+        *,
+        review_item_id: str,
+    ) -> ReviewItem:
+        """Reset an approved review item back to pending so it can be re-reviewed."""
+        review_item = await self.get(session, review_item_id)
+        if review_item is None:
+            raise ValueError("Review item not found")
+        if review_item.decision != ReviewDecision.APPROVED.value:
+            raise ValueError(f"Can only demote approved items, current decision: {review_item.decision}")
+
+        candidate = await session.get(CandidatePost, review_item.candidate_post_id)
+        if candidate is None:
+            raise ValueError("Candidate post not found")
+
+        # Demote the candidate back to queued
+        await self._candidate_repo.transition_status(session, candidate, CandidateStatus.QUEUED)
+
+        # Reset the review decision
+        review_item.decision = ReviewDecision.PENDING.value
+        review_item.reviewed_by = None
+        review_item.reviewed_at = None
+        session.add(review_item)
+        await session.flush()
+        return review_item

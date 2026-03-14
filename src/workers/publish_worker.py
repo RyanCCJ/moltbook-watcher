@@ -10,7 +10,7 @@ from src.models.candidate_post import CandidatePost, CandidatePostRepository
 from src.models.lifecycle import CandidateStatus
 from src.models.publish_job import PublishJob, PublishJobRepository
 from src.models.published_post_record import PublishedPostRecordRepository
-from src.models.review_item import ReviewItem
+from src.models.review_item import ReviewItem, ReviewItemRepository
 from src.services.publish_mode_service import PublishControlService, publish_control
 from src.services.publish_retry_policy import PublishRetryPolicy
 
@@ -36,6 +36,8 @@ class PublishWorker:
         threads_account_key: str = "default-account",
         max_publish_per_day: int = 0,
         cooldown_minutes: int = 0,
+        publish_job_repo: PublishJobRepository | None = None,
+        review_repo: ReviewItemRepository | None = None,
     ) -> None:
         self._threads_client = threads_client
         self._notification_service = notification_service
@@ -44,9 +46,10 @@ class PublishWorker:
         self._threads_account_key = threads_account_key
         self._max_publish_per_day = max_publish_per_day
         self._cooldown_minutes = cooldown_minutes
-        self._jobs = PublishJobRepository()
+        self._jobs = publish_job_repo or PublishJobRepository()
         self._records = PublishedPostRecordRepository()
         self._candidates = CandidatePostRepository()
+        self._review_repo = review_repo or ReviewItemRepository()
 
     async def run_cycle(self, session: AsyncSession) -> PublishCycleMetrics:
         metrics = PublishCycleMetrics(
@@ -147,23 +150,37 @@ class PublishWorker:
         review_item = await session.scalar(
             select(ReviewItem).where(ReviewItem.candidate_post_id == candidate.id).order_by(ReviewItem.created_at.desc())
         )
-        if review_item is not None and not review_item.threads_draft.strip():
-            job.status = "failed_terminal"
-            job.last_error_code = "missing_threads_draft"
-            job.last_error_message = "Threads draft is empty; skip raw-content fallback"
+        draft_text = review_item.threads_draft.strip() if review_item else ""
+        if review_item is not None and (not draft_text or draft_text.startswith("【 System:")):
+            # Draft is empty or an error placeholder — cancel the job and demote back to pending
+            job.status = "cancelled"
+            job.last_error_code = "missing_threads_draft" if not draft_text else "invalid_threads_draft"
+            job.last_error_message = (
+                f"Threads draft is {'empty' if not draft_text else 'invalid'}; "
+                "post demoted back to pending for human review"
+            )
             job.updated_at = datetime.now(tz=UTC)
             session.add(job)
+
+            try:
+                await self._review_repo.demote_to_pending(session, review_item_id=review_item.id)
+            except ValueError:
+                pass  # If already pending, no-op
+
             await self._notification_service.notify_terminal_failure(
                 session,
                 job,
-                error_message=job.last_error_message,
+                error_message=(
+                    f"{job.last_error_message} — review_item_id: {review_item.id}\n"
+                    "Use /pending in Telegram to find and regenerate this draft."
+                ),
             )
             await session.flush()
-            return "failed_terminal"
+            return "cancelled"
 
         publish_text = candidate.raw_content
-        if review_item is not None and review_item.threads_draft.strip():
-            publish_text = review_item.threads_draft
+        if review_item is not None and draft_text:
+            publish_text = draft_text
 
         job.status = "in_progress"
         job.attempt_count += 1

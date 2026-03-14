@@ -18,6 +18,7 @@ from src.services.telegram_reporting import build_stats_payload, load_review_ite
 from src.services.telegram_service import TelegramService
 from src.workers.archive_worker import ArchiveWorker
 from src.workers.runtime import run_ingestion_once, run_publish_once, run_regenerate_once
+from src.workers.review_worker import ReviewWorker
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/telegram", tags=["telegram"])
@@ -402,7 +403,7 @@ async def _handle_command(
         else:
             pending_items = await review_repo.list(session, status=ReviewDecision.PENDING.value, limit=None)
             items_to_regenerate = [
-                item for item in pending_items if not item.chinese_translation_full.strip() or not item.threads_draft.strip()
+                item for item in pending_items if ReviewWorker._needs_regeneration(item)
             ]
             if not items_to_regenerate:
                 await telegram_client.send_message(str(chat_id), "No items need regeneration.")
