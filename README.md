@@ -1,9 +1,13 @@
-# Moltbook Watcher
+# <img src="moltbook.png" height="40" align="center"> Moltbook Watcher
+
+<div align="center">
 
 [![Spec-Driven Development](https://img.shields.io/badge/Workflow-OpenSpec-blueviolet)](https://github.com/openspec-foundation/openspec)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![AI-Powered](https://img.shields.io/badge/Intelligence-Ollama%20%7C%20Qwen%203.5-orange)](https://ollama.com/)
 [![Built with Vibe Coding](https://img.shields.io/badge/Dev-Vibe%20Coding-ff69b4)](https://github.com/topics/vibe-coding)
+
+</div>
 
 **Moltbook Watcher** is an autonomous observation and curation engine designed to capture emergent "sparks" of intelligence within **[Moltbook](https://www.moltbook.com)**—the world's premier social ecosystem built exclusively for AI agents. It filters complex agent-to-agent interactions to surface profound, humorous, and thought-provoking discussions for human audiences on **Threads**.
 
@@ -30,13 +34,13 @@ Every interaction is evaluated against a proprietary "Spark Matrix":
 > `FinalScore = (0.6 * ContentScore) + (0.4 * Engagement) - RiskPenalty`
 
 ### Automated Synthesis
-Upon detecting a high-signal interaction, the `Qwen 3.5` engine automatically synthesizes the dialogue into a cohesive Threads draft. It concurrently generates a sentence-by-sentence translation (e.g., Chinese) to empower human curators with rapid verification capabilities.
+Upon detecting a high-signal interaction, the `Qwen 3.5` engine automatically synthesizes the dialogue into a cohesive Threads draft. It concurrently generates a sentence-by-sentence translation to empower human curators with rapid verification capabilities.
 
 ## 🛠 The Superpower Workflow: AI-Native Engineering
 
 This project is a definitive showcase of **Spec-Driven Development (SDD)** and **Vibe Coding**. The system was architected and implemented through an agentic lifecycle, leveraging a multi-model AI fleet for precision execution.
 
-*   **Lead Architect (Claude 3.5 Opus / 3.7 Sonnet):** Formalized the `openspec` artifacts and system state machines.
+*   **Lead Architect (Claude Opus 4.6):** Formalized the `openspec` artifacts and system state machines.
 *   **Implementation Fleet (GPT-5.3-codex & GPT-5.4):** Executed implementation tasks with surgical precision, adhering to strict typing and contract standards.
 *   **Integration Audit (Gemini 3.1 Pro):** Performed comprehensive architectural reviews and refactoring over massive context windows.
 *   **Strategic Tooling:** Utilized `Superpowers Brainstorm` for vision alignment and `Speckit` for automated contract generation.
@@ -80,13 +84,19 @@ The curation lifecycle is orchestrated through a high-frictionless interface des
 
 ### Primary Interface: Telegram Bot
 The **Moltbook Command Bot** serves as the primary gateway for curators, providing real-time alerts and interactive controls:
-*   `/health` — Instant system pulse and service status.
-*   `/pending` — Review the current high-signal queue.
-*   `/recall` — Retrieve high-score items from the auto-archive.
-*   `/stats` — Performance analytics and ingestion metrics.
-*   **Interactive Inline Buttons** — Approve, Reject, or Regenerate drafts with a single tap.
+*   `/help` — Show available commands and operator guide.
+*   `/health` — Instant system pulse, database health, and webhook status.
+*   `/stats` — Performance analytics, ingestion metrics, and queue depth.
+*   `/pending` — List high-signal items awaiting review (supports optional min score).
+*   `/review <n>` — Open full details and interactive controls for a specific item.
+*   `/ingest` — Trigger a manual observation cycle (supports time/sort/limit args).
+*   `/publish` — Manually trigger the scheduled publishing worker.
+*   `/regenerate` — Force AI to rewrite drafts for pending or specific items.
+*   `/recall` — Retrieve high-score items from the auto-archive for manual review.
+*   `/cancel` — Abort any pending interactive state (e.g., rejection comment or edit).
+*   **Interactive Inline Buttons** — Approve, Reject, Edit, or Regenerate drafts with a single tap.
 
-### Secondary Control: Ops CLI
+### Secondary Control: CLI
 For low-level system maintenance and manual batch processing:
 ```bash
 # Trigger Manual Observation Cycle
@@ -98,9 +108,11 @@ uv run python scripts/ops_cli.py review-decide <ID> --decision approved
 ```
 
 ## 📑 Documentation
-*   [Strategic Design: Capturing AI Sparks](./docs/plans/2026-02-24-moltbook-curation-design.md)
 *   [Data Flow & System Lifecycle](./docs/data-flow-and-safe-reset.md)
 *   [Ollama & Integration Setup](./docs/ollama-and-threads-credentials.md)
+*   [Telegram Bot Setup Guide](./docs/telegram-setup.md)
+*   [Service Setup & Smoke Test](./docs/service-setup-run-test.md)
+*   [Systemd & Launchd Deployment](./docs/systemd-launchd-runbook.md)
 
 ---
 
